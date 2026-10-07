@@ -3,23 +3,25 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app import data
+from app import data, qa
 from app.catalog import CatalogService, CategoryIn, CategoryUpdate, MenuItemIn, MenuItemUpdate
 from app.data import COURIERS, RESTAURANTS, USERS
+from app.demand import DemandService
 from app.inventory import InventoryService, OutOfStock
 from app.maps import LatLng, RouteProvider, get_provider
-from app.models import CLOSED, Channel, CreateOrderRequest, Fulfillment, Ingredient, NotificationPreferences, TravelMode
+from app.models import CLOSED, Channel, CreateOrderRequest, Fulfillment, Ingredient, NotificationPreferences, OrderLine, TravelMode
 from app.notifications.channels import SimulatedChannel, WebSocketChannel
 from app.notifications.events import EventBus
 from app.notifications.service import NotificationService
@@ -72,6 +74,9 @@ async def lifespan(app: FastAPI):
         app.state.notifications,
         app.state.orders,
     ) = build_services()
+    if os.environ.get("QA_SEED"):
+        n = qa.seed(app.state.orders)
+        logging.getLogger(__name__).info("QA_SEED: added %s and %d QA orders", qa.QA_RESTAURANT_ID, n)
     yield
     await app.state.orders.shutdown()
 
@@ -125,6 +130,8 @@ async def create_order(req: CreateOrderRequest):
         raise HTTPException(422, "order has no items")
     if (req.pickup_lat is None) != (req.pickup_lng is None):
         raise HTTPException(422, "send both pickup_lat and pickup_lng, or neither")
+    if (req.delivery_lat is None) != (req.delivery_lng is None):
+        raise HTTPException(422, "send both delivery_lat and delivery_lng, or neither")
     try:
         return await app.state.orders.create(req)
     except OutOfStock as exc:
@@ -135,10 +142,11 @@ async def create_order(req: CreateOrderRequest):
 
 @app.get("/api/orders")
 async def list_orders(user_id: str | None = None):
-    orders = app.state.orders.orders.values()
+    svc: OrderService = app.state.orders
+    orders = svc.orders.values()
     if user_id:
         orders = [o for o in orders if o.user_id == user_id]
-    return sorted(orders, key=lambda o: o.created_at, reverse=True)
+    return [svc.with_live(o) for o in sorted(orders, key=lambda o: o.created_at, reverse=True)]
 
 
 def _order_or_404(order_id: str):
@@ -150,7 +158,7 @@ def _order_or_404(order_id: str):
 
 @app.get("/api/orders/{order_id}")
 async def get_order(order_id: str):
-    return _order_or_404(order_id)
+    return app.state.orders.with_live(_order_or_404(order_id))
 
 
 @app.get("/api/orders/{order_id}/dispatch")
@@ -219,6 +227,12 @@ class PredictRequest(BaseModel):
     restaurant_id: str
     item_count: int = 2
     raining: bool = False
+    # Current location: when sent, the delivery quote is to here instead of
+    # the saved address.
+    lat: float | None = None
+    lng: float | None = None
+    # Cart lines: item-specific kitchen time (grab-and-go vs cooked).
+    lines: list[OrderLine] | None = None
 
 
 @app.post("/api/predict/eta")
@@ -230,18 +244,34 @@ async def predict_eta(req: PredictRequest):
     if not user or not rest:
         raise HTTPException(404, "user or restaurant not found")
     svc: OrderService = app.state.orders
-    route = await svc.routes.route(LatLng(rest.lat, rest.lng), LatLng(user.lat, user.lng))
+    dest = svc.delivery_destination(user, req.lat, req.lng)
+    route = await svc.routes.route(LatLng(rest.lat, rest.lng), dest)
     pred = app.state.predictor.predict(
         distance_km=route.distance_km,
         travel_time_min=route.duration_min,
-        prep_time_min=rest.avg_prep_min,
-        item_count=req.item_count,
+        prep_time_min=svc.prep_minutes(rest, req.lines),
+        item_count=(pred_count := max(1, sum(l.quantity for l in req.lines)) if req.lines else req.item_count),
         when=datetime.now(timezone.utc),
         raining=req.raining,
         courier_load=svc.courier_load(),
         restaurant_busy=svc.restaurant_busy(rest.id),
     )
-    return {**pred.model_dump(mode="json"), "route": route.__dict__}
+    breakdown = await svc.delivery_breakdown(rest, dest, req.lines, pred_count)
+    out = pred.model_dump(mode="json")
+    if breakdown["grab_and_go"]:
+        # No cooking: the courier chain is the whole story, not the kitchen model.
+        from datetime import timedelta
+        out["eta_minutes"] = breakdown["total_min"]
+        out["eta_at"] = (datetime.now(timezone.utc) + timedelta(minutes=breakdown["total_min"])).isoformat()
+    return {
+        **out,
+        "breakdown": breakdown,
+        "route": route.__dict__,
+        "destination": {
+            "lat": dest.lat, "lng": dest.lng,
+            "source": "current_location" if req.lat is not None and req.lng is not None else "saved_address",
+        },
+    }
 
 
 class PickupQuoteRequest(BaseModel):
@@ -251,6 +281,7 @@ class PickupQuoteRequest(BaseModel):
     lat: float | None = None
     lng: float | None = None
     mode: TravelMode = TravelMode.DRIVING
+    lines: list[OrderLine] | None = None
 
 
 @app.post("/api/predict/pickup")
@@ -259,8 +290,9 @@ async def predict_pickup(req: PickupQuoteRequest):
     user, rest = USERS.get(req.user_id), RESTAURANTS.get(req.restaurant_id)
     if not user or not rest:
         raise HTTPException(404, "user or restaurant not found")
+    count = max(1, sum(l.quantity for l in req.lines)) if req.lines else max(1, req.item_count)
     return await app.state.orders.quote_pickup(
-        user, rest, item_count=max(1, req.item_count), lat=req.lat, lng=req.lng, mode=req.mode)
+        user, rest, item_count=count, lat=req.lat, lng=req.lng, mode=req.mode, lines=req.lines)
 
 
 @app.get("/api/predict/model")
@@ -447,5 +479,24 @@ async def inventory_alerts(rid: str):
     return _inventory().alerts_for(rid)
 
 
+
+# ---- merchant: demand by time of day ----------------------------------------
+
+def _demand() -> DemandService:
+    # One per OrderService, so a fresh build_services() (tests) gets fresh history.
+    if getattr(app.state, "demand_owner", None) is not app.state.orders:
+        # QA restaurants are judged on their QA orders alone.
+        app.state.demand = DemandService(
+            RESTAURANTS, simulate=[rid for rid in RESTAURANTS if rid != qa.QA_RESTAURANT_ID])
+        app.state.demand_owner = app.state.orders
+    return app.state.demand
+
+
+@app.get(M + "/demand")
+async def demand_report(rid: str, days: int = Query(28, ge=1, le=90), include_simulated: bool = True):
+    """Orders by meal period, what sells when, and menu suggestions."""
+    _catalog(rid)
+    return _demand().report(rid, app.state.orders.orders.values(), days=days,
+                            include_simulated=include_simulated)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

@@ -4,7 +4,7 @@ struct CartView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var fulfillment: Fulfillment = .delivery
+    @State private var fulfillment: Fulfillment = .pickup
     @State private var mode: TravelMode = .driving
     @State private var raining = false
     @State private var quote: EtaQuote?
@@ -29,8 +29,8 @@ struct CartView: View {
 
                     Section {
                         Picker("Fulfillment", selection: $fulfillment) {
-                            Text("Delivery").tag(Fulfillment.delivery)
                             Text("Pickup").tag(Fulfillment.pickup)
+                            Text("Delivery").tag(Fulfillment.delivery)
                         }
                         .pickerStyle(.segmented)
                         .listRowSeparator(.hidden)
@@ -78,6 +78,10 @@ struct CartView: View {
             .onChange(of: fulfillment) { _, new in
                 if new == .pickup { store.location.start() }
             }
+            .onAppear {
+                store.location.start()
+                if let r = store.cartRestaurant { mode = store.suggestedMode(to: r) }
+            }
             // Re-quote whenever a model input changes: cart size, weather,
             // fulfillment, travel mode, or where the customer is.
             .task(id: "\(store.cartCount)-\(raining)-\(fulfillment)-\(mode)-\(store.location.movementKey)") {
@@ -100,11 +104,28 @@ struct CartView: View {
 
     @ViewBuilder private var deliveryEstimate: some View {
         if let quote {
+            InfoRow(label: "Deliver to", value: quote.toCurrentLocation ? "Your current location" : "Saved address")
             InfoRow(label: "Arrives in", value: Format.minutes(quote.etaMinutes))
             InfoRow(label: "Distance", value: Format.km(quote.route.distanceKm))
             InfoRow(label: "Drive time",
                     value: "\(Format.minutes(quote.route.durationMin)) · \(quote.route.source == "google" ? "Google Maps" : "estimated")")
             RiskBadge(risk: quote.delayRisk)
+            if let b = quote.breakdown {
+                DisclosureGroup("Where the time goes") {
+                    InfoRow(label: b.grabAndGo ? "Handover at counter" : "Kitchen", value: Format.minutes(b.kitchenMin))
+                    if let c = b.courierToRestaurantMin {
+                        InfoRow(label: "Courier reaches restaurant", value: Format.minutes(c))
+                    }
+                    InfoRow(label: "Pickup handoff", value: Format.minutes(b.pickupHandoffMin))
+                    InfoRow(label: "Drive to you", value: Format.minutes(b.driveToYouMin))
+                    InfoRow(label: "Drop-off", value: Format.minutes(b.dropoffHandoffMin))
+                    Text(b.grabAndGo
+                         ? "No cooking needed: the courier's trip is the whole wait. Pickup would be faster if you're nearby."
+                         : "The kitchen and the courier's trip to the restaurant overlap; the longer one sets the start.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .font(.subheadline)
+            }
         } else {
             ProgressView()
         }

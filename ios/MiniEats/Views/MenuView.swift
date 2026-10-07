@@ -14,10 +14,13 @@ struct MenuView: View {
                     CuisineIcon(cuisine: restaurant.cuisine, size: 64)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(restaurant.cuisine).foregroundStyle(.secondary)
-                        if let quote = store.quotes[restaurant.id] {
-                            Text("\(Format.minutes(quote.etaMinutes)) · \(Format.km(quote.route.distanceKm))")
+                        if let a = restaurant.address, !a.isEmpty {
+                            Label(a, systemImage: "mappin.and.ellipse").font(.subheadline)
+                        }
+                        if let p = store.pickupQuotes[restaurant.id] {
+                            Text("Pickup: ready from ~\(Format.minutes(p.readyInMin)) · \(Format.minutes(p.tripMin)) \(p.verb)")
                                 .font(.headline)
-                            RiskBadge(risk: quote.delayRisk)
+                            Text("\(Format.km(p.distanceKm)) from you").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -70,7 +73,16 @@ private struct MenuItemRow: View {
                 if let d = item.description, !d.isEmpty {
                     Text(d).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
-                Text(Format.money(item.price)).font(.subheadline).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(Format.money(item.price)).font(.subheadline).foregroundStyle(.secondary)
+                    if let p = item.prepMin, p <= 3 {
+                        Text("ready in ~\(Int(p.rounded())) min")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.brand.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Color.brand)
+                    }
+                }
             }
             .opacity(item.orderable ? 1 : 0.45)
             Spacer()

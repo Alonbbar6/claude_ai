@@ -1,6 +1,6 @@
 """Distance & travel-time providers.
 
-``GoogleMapsProvider`` calls the Distance Matrix API (with live traffic) and
+``GoogleMapsProvider`` calls the Routes API route matrix (with live traffic) and
 is used whenever ``GOOGLE_MAPS_API_KEY`` is set. ``HaversineProvider`` is the
 offline fallback so the app, tests and demo work without a key.
 
@@ -21,7 +21,8 @@ from app.prediction.features import haversine_km
 
 log = logging.getLogger(__name__)
 
-DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json"
+ROUTE_MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
+ROUTES_TRAVEL_MODE = {"driving": "DRIVE", "walking": "WALK"}
 
 # Fallback assumptions when Google is unavailable.
 SPEED_KMH = {"driving": 19.0, "walking": 4.8}
@@ -61,8 +62,8 @@ class HaversineProvider(RouteProvider):
 
 
 class GoogleMapsProvider(RouteProvider):
-    """Distance Matrix with ``departure_time=now`` so we get traffic-aware
-    durations. Results are cached briefly; traffic doesn't change by the
+    """Routes API ``computeRouteMatrix``; driving uses ``TRAFFIC_AWARE`` so we
+    get traffic-aware durations. Results are cached briefly; traffic doesn't change by the
     second and the API is billed per element."""
 
     def __init__(
@@ -87,32 +88,37 @@ class GoogleMapsProvider(RouteProvider):
         try:
             est = await self._fetch(origin, dest, mode)
         except Exception as exc:  # network, quota, bad key, malformed body...
-            log.warning("Google Distance Matrix failed (%s); using fallback", exc)
+            log.warning("Google Routes API failed (%s); using fallback", exc)
             return await self.fallback.route(origin, dest, mode)
         self._cache[key] = (time.monotonic(), est)
         return est
 
     async def _fetch(self, origin: LatLng, dest: LatLng, mode: str) -> RouteEstimate:
-        resp = await self.client.get(
-            DISTANCE_MATRIX_URL,
-            params={
-                "origins": str(origin),
-                "destinations": str(dest),
-                "mode": mode,
-                "departure_time": "now",
-                "key": self.api_key,
+        body = {
+            "origins": [_waypoint(origin)],
+            "destinations": [_waypoint(dest)],
+            "travelMode": ROUTES_TRAVEL_MODE[mode],
+        }
+        if mode == "driving":
+            body["routingPreference"] = "TRAFFIC_AWARE"  # not allowed for WALK
+        resp = await self.client.post(
+            ROUTE_MATRIX_URL,
+            json=body,
+            headers={
+                "X-Goog-Api-Key": self.api_key,
+                "X-Goog-FieldMask": "originIndex,destinationIndex,status,condition,distanceMeters,duration",
             },
         )
-        resp.raise_for_status()
-        body = resp.json()
-        if body.get("status") != "OK":
-            raise RuntimeError(f"status={body.get('status')} {body.get('error_message', '')}")
-        el = body["rows"][0]["elements"][0]
-        if el.get("status") != "OK":
-            raise RuntimeError(f"element status={el.get('status')}")
-        seconds = el.get("duration_in_traffic", el["duration"])["value"]
+        data = resp.json()
+        if resp.status_code != 200:
+            err = data.get("error", {}) if isinstance(data, dict) else {}
+            raise RuntimeError(f"HTTP {resp.status_code} {err.get('status', '')} {err.get('message', '')}")
+        el = data[0]
+        if el.get("condition") != "ROUTE_EXISTS":
+            raise RuntimeError(f"condition={el.get('condition')} status={el.get('status')}")
+        seconds = float(el["duration"].rstrip("s"))
         return RouteEstimate(
-            distance_km=round(el["distance"]["value"] / 1000, 2),
+            distance_km=round(el.get("distanceMeters", 0) / 1000, 2),
             duration_min=round(seconds / 60, 1),
             source="google",
         )
@@ -121,10 +127,14 @@ class GoogleMapsProvider(RouteProvider):
         await self.client.aclose()
 
 
+def _waypoint(p: LatLng) -> dict:
+    return {"waypoint": {"location": {"latLng": {"latitude": p.lat, "longitude": p.lng}}}}
+
+
 def get_provider() -> RouteProvider:
     key = os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
     if key:
-        log.info("Using Google Distance Matrix for routing")
+        log.info("Using Google Routes API for routing")
         return GoogleMapsProvider(key)
     log.info("GOOGLE_MAPS_API_KEY not set; using haversine routing fallback")
     return HaversineProvider()

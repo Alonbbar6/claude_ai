@@ -1,0 +1,41 @@
+{
+	"folders": [
+		{
+			"name": "Ai_elite",
+			"path": ".."
+		},
+		{
+			"name": "app-review-handoff",
+			"path": "../../../Developer/PriorityTaskManager/claude-skills/app-review-handoff"
+		},
+		{
+			"name": "apple-accounts",
+			"path": "../../../Developer/PriorityTaskManager/claude-skills/apple-accounts"
+		},
+		{
+			"name": "branch-review-loop",
+			"path": "../../../Developer/PriorityTaskManager/claude-skills/branch-review-loop"
+		},
+		{
+			"name": "hermetic-backend-tests",
+			"path": "../../../Developer/PriorityTaskManager/claude-skills/hermetic-backend-tests"
+		},
+		{
+			"name": "icloud-kv-sync",
+			"path": "../../../Developer/PriorityTaskManager/claude-skills/icloud-kv-sync"
+		},
+		{
+			"name": "ios-privacy-compliance",
+			"path": "../../../Developer/PriorityTaskManager/claude-skills/ios-privacy-compliance"
+		},
+		{
+			"name": "oauth-connect-flow",
+			"path": "../../../Developer/PriorityTaskManager/claude-skills/oauth-connect-flow"
+		},
+		{
+			"name": "storekit-server-verification",
+			"path": "../../../Developer/PriorityTaskManager/claude-skills/storekit-server-verification"
+		}
+	],
+	"settings": {}
+}

@@ -7,9 +7,22 @@ import SwiftUI
 @MainActor
 @Observable
 final class MerchantStore {
-    static let defaultServer = "http://127.0.0.1:8000"
+    /// Built-in server: MINIEATS_SERVER_URL from the project (via Info.plist),
+    /// else localhost for the Simulator.
+    static let defaultServer: String = {
+        if let s = Bundle.main.object(forInfoDictionaryKey: "MiniEatsServerURL") as? String,
+           !s.isEmpty, !s.hasPrefix("$(") {
+            return s
+        }
+        return "http://127.0.0.1:8000"
+    }()
+
+    /// BarMade kitchen API; picked like a restaurant under `barMadeId`.
+    static let barMadeId = "barmade"
+    static let defaultBarMadeServer = "https://barmade-api.onrender.com"
 
     private(set) var serverURL: String
+    private(set) var barMadeServerURL: String
     private(set) var restaurantId: String?
     var restaurants: [Restaurant] = []
     var categories: [MenuCategory] = []
@@ -17,26 +30,39 @@ final class MerchantStore {
     var stock: [StockItem] = []
     var alerts: [InventoryAlert] = []
     var loadError: String?
+    var barMade = BarMadeSnapshot()
+    var barMadeError: String?
     private var seenAlertIds: Set<String> = []
 
     init() {
-        serverURL = UserDefaults.standard.string(forKey: "merchantServerURL") ?? Self.defaultServer
+        serverURL = usableServerURL(saved: UserDefaults.standard.string(forKey: "merchantServerURL"), fallback: Self.defaultServer)
+        barMadeServerURL = UserDefaults.standard.string(forKey: "barMadeServerURL") ?? Self.defaultBarMadeServer
         restaurantId = UserDefaults.standard.string(forKey: "merchantRestaurantId")
+        // Launch-argument server (set when installed from a Mac) becomes the saved default.
+        if CommandLine.arguments.contains("-merchantServerURL") {
+            UserDefaults.standard.set(serverURL, forKey: "merchantServerURL")
+        }
     }
 
     var api: APIClient { APIClient(baseURL: URL(string: serverURL) ?? URL(string: Self.defaultServer)!) }
     var restaurant: Restaurant? { restaurants.first { $0.id == restaurantId } }
+    var isBarMade: Bool { restaurantId == Self.barMadeId }
+    var barMadeClient: BarMadeClient {
+        BarMadeClient(baseURL: URL(string: barMadeServerURL) ?? URL(string: Self.defaultBarMadeServer)!)
+    }
 
     private func path(_ p: String) -> String { "/api/merchant/restaurants/\(restaurantId ?? "")\(p)" }
 
     // MARK: - Loading
 
     func start() async {
+        // BarMade doesn't need the Mini Eats server to be up.
+        if isBarMade { await reload() }
         do {
             restaurants = try await api.get("/api/restaurants")
             loadError = nil
-            if restaurant == nil { restaurantId = nil }
-            if restaurantId != nil { await reload() }
+            if restaurant == nil && !isBarMade { restaurantId = nil }
+            if restaurantId != nil && !isBarMade { await reload() }
         } catch {
             loadError = error.localizedDescription
         }
@@ -46,6 +72,7 @@ final class MerchantStore {
         restaurantId = id
         UserDefaults.standard.set(id, forKey: "merchantRestaurantId")
         categories = []; items = []; stock = []; alerts = []; seenAlertIds = []
+        barMade = BarMadeSnapshot(); barMadeError = nil
         if id != nil { await reload() }
     }
 
@@ -55,8 +82,16 @@ final class MerchantStore {
         await start()
     }
 
+    func updateBarMadeServerURL(_ url: String) async {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        barMadeServerURL = trimmed.isEmpty ? Self.defaultBarMadeServer : trimmed
+        UserDefaults.standard.set(barMadeServerURL, forKey: "barMadeServerURL")
+        await reload()
+    }
+
     func reload() async {
         guard restaurantId != nil else { return }
+        if isBarMade { return await reloadBarMade() }
         do {
             let menu: MenuCatalog = try await api.get(path("/menu"))
             categories = menu.categories
@@ -68,6 +103,41 @@ final class MerchantStore {
             loadError = error.localizedDescription
         }
     }
+
+    private func reloadBarMade() async {
+        do {
+            barMade = try await barMadeClient.snapshot()
+            barMadeError = nil
+        } catch {
+            barMadeError = error.localizedDescription
+        }
+    }
+
+    // MARK: - BarMade derived
+
+    func barMadeIngredient(_ id: String) -> BarMadeIngredient? { barMade.inventory.first { $0.id == id } }
+
+    /// How many of a dish the usable (unexpired) stock can still make.
+    func portionsLeft(_ item: BarMadeMenuItem) -> Int? {
+        item.ingredients.compactMap { line -> Int? in
+            guard line.quantity > 0 else { return nil }
+            let onHand = barMadeIngredient(line.ingredientId)?.totalQuantity ?? 0
+            return Int((onHand / line.quantity).rounded(.down))
+        }.min()
+    }
+
+    /// Dishes whose recipe uses an ingredient.
+    func dishes(using ingredientId: String) -> [String] {
+        barMade.menu.filter { $0.ingredients.contains { $0.ingredientId == ingredientId } }.map(\.name)
+    }
+
+    var barMadeProblemCount: Int {
+        barMade.inventory.filter { $0.level != "ok" || !$0.atRiskBatches.isEmpty }.count
+    }
+    var barMadeUnreadAlerts: Int {
+        barMade.alerts.filter { $0.status == "ACTIVE" && !seenAlertIds.contains($0.id) }.count
+    }
+    func markBarMadeAlertsSeen() { seenAlertIds.formUnion(barMade.alerts.map(\.id)) }
 
     // MARK: - Derived
 

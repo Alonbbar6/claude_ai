@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -15,22 +17,21 @@ async def test_haversine_fallback_is_sane():
 
 
 def google_ok(request):
-    return httpx.Response(200, json={
-        "status": "OK",
-        "rows": [{"elements": [{
-            "status": "OK",
-            "distance": {"value": 2400},
-            "duration": {"value": 420},
-            "duration_in_traffic": {"value": 600},
-        }]}],
-    })
+    return httpx.Response(200, json=[{
+        "originIndex": 0,
+        "destinationIndex": 0,
+        "status": {},
+        "condition": "ROUTE_EXISTS",
+        "distanceMeters": 2400,
+        "duration": "600s",
+    }])
 
 
-async def test_google_uses_traffic_duration_and_caches():
+async def test_google_uses_routes_api_and_caches():
     calls = []
 
     def handler(request):
-        calls.append(request.url)
+        calls.append(request)
         return google_ok(request)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -39,19 +40,46 @@ async def test_google_uses_traffic_duration_and_caches():
     est = await provider.route(MIAMI, NEARBY)
     assert est.source == "google"
     assert est.distance_km == 2.4
-    assert est.duration_min == 10.0  # duration_in_traffic, not duration
-    assert "departure_time=now" in str(calls[0]) and "key=test-key" in str(calls[0])
+    assert est.duration_min == 10.0
+    req = calls[0]
+    body = json.loads(req.content)
+    assert req.method == "POST" and "computeRouteMatrix" in str(req.url)
+    assert req.headers["X-Goog-Api-Key"] == "test-key" and "key=" not in str(req.url)
+    assert body["travelMode"] == "DRIVE" and body["routingPreference"] == "TRAFFIC_AWARE"
+    assert body["origins"][0]["waypoint"]["location"]["latLng"] == {"latitude": MIAMI.lat, "longitude": MIAMI.lng}
 
     await provider.route(MIAMI, NEARBY)
     assert len(calls) == 1  # cached
 
 
+async def test_google_walking_has_no_traffic_preference():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return google_ok(request)
+
+    provider = GoogleMapsProvider("k", client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    est = await provider.route(MIAMI, NEARBY, mode="walking")
+    assert est.source == "google"
+    assert bodies[0]["travelMode"] == "WALK" and "routingPreference" not in bodies[0]
+
+
 async def test_google_falls_back_on_error():
     def handler(request):
-        return httpx.Response(200, json={"status": "REQUEST_DENIED", "error_message": "bad key"})
+        return httpx.Response(403, json={"error": {"code": 403, "status": "PERMISSION_DENIED", "message": "bad key"}})
 
     provider = GoogleMapsProvider("bad", client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     est = await provider.route(MIAMI, NEARBY)
+    assert est.source == "haversine"
+
+
+async def test_google_falls_back_when_no_route():
+    def handler(request):
+        return httpx.Response(200, json=[{"originIndex": 0, "destinationIndex": 0, "condition": "ROUTE_NOT_FOUND"}])
+
+    provider = GoogleMapsProvider("k", client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    est = await provider.route(MIAMI, NEARBY, mode="walking")
     assert est.source == "haversine"
 
 

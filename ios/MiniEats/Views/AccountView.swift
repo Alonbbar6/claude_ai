@@ -58,6 +58,25 @@ struct AccountView: View {
             }
 
             Section {
+                InfoRow(label: "Permission", value: store.location.statusText)
+                if let c = store.location.coordinate {
+                    InfoRow(label: "Last fix", value: String(format: "%.4f, %.4f", c.latitude, c.longitude))
+                }
+                InfoRow(label: "Background", value: store.location.backgroundTracking ? "On (pickup in progress)" : "Off")
+                if store.location.isDenied {
+                    Link("Turn on in Settings", destination: URL(string: UIApplication.openSettingsURLString)!)
+                } else if store.location.authorization == .notDetermined {
+                    Button("Allow location") { store.location.start() }
+                } else if !store.location.hasAlways {
+                    Button("Allow background tracking") { store.location.requestAlways() }
+                }
+            } header: {
+                Text("Location tracking")
+            } footer: {
+                Text("Shown on the order map and used to time pickups. Background tracking runs only while a pickup order is in progress.")
+            }
+
+            Section {
                 TextField("http://127.0.0.1:8000", text: $server)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)

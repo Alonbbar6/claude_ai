@@ -68,7 +68,7 @@ def generate(n: int = 5000, seed: int = 7) -> tuple[np.ndarray, np.ndarray]:
     X, y = [], []
     for _ in range(n):
         x = ready_features(
-            prep_time_min=float(rng.choice([10, 12, 15, 18, 20, 22, 25, 30])),
+            prep_time_min=float(rng.choice([2, 3, 5, 8, 10, 12, 15, 18, 20, 22, 25, 30])),
             item_count=int(rng.integers(1, 7)),
             restaurant_busy=float(rng.integers(0, 10)),
             when=start + timedelta(minutes=int(rng.integers(0, 60 * 24 * 90))),

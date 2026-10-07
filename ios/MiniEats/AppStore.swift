@@ -1,13 +1,15 @@
+import CoreLocation
 import Foundation
 import Observation
 import UserNotifications
 
 /// Single source of app state: catalogue, cart, orders, notifications, and the
 /// live WebSocket that streams notifications from the backend.
+
 @MainActor
 @Observable
 final class AppStore {
-    enum Tab: Hashable { case home, orders, notifications, account }
+    enum Tab: Hashable { case home, map, orders, notifications, account }
 
     struct CartLine: Identifiable {
         let item: MenuItem
@@ -15,7 +17,15 @@ final class AppStore {
         var id: String { item.id }
     }
 
-    static let defaultServer = "http://127.0.0.1:8000"
+    /// Built-in server: MINIEATS_SERVER_URL from the project (via Info.plist),
+    /// else localhost for the Simulator.
+    static let defaultServer: String = {
+        if let s = Bundle.main.object(forInfoDictionaryKey: "MiniEatsServerURL") as? String,
+           !s.isEmpty, !s.hasPrefix("$(") {
+            return s
+        }
+        return "http://127.0.0.1:8000"
+    }()
 
     // Server & session
     private(set) var serverURL: String
@@ -27,7 +37,8 @@ final class AppStore {
 
     // Catalogue
     var restaurants: [Restaurant] = []
-    var quotes: [String: EtaQuote] = [:]
+    var quotes: [String: EtaQuote] = [:]           // delivery (secondary)
+    var pickupQuotes: [String: PickupPlan] = [:]   // pickup (primary)
 
     // Cart (single restaurant at a time, like Uber Eats / DoorDash)
     private(set) var cartRestaurantId: String?
@@ -50,8 +61,13 @@ final class AppStore {
     private var socketGeneration = 0
 
     init() {
-        serverURL = UserDefaults.standard.string(forKey: "serverURL") ?? Self.defaultServer
+        serverURL = usableServerURL(saved: UserDefaults.standard.string(forKey: "serverURL"), fallback: Self.defaultServer)
         currentUserId = UserDefaults.standard.string(forKey: "userId")
+        // A server passed as a launch argument (e.g. when installed from a Mac)
+        // becomes the saved default, so it survives the next cold start.
+        if CommandLine.arguments.contains("-serverURL") {
+            UserDefaults.standard.set(serverURL, forKey: "serverURL")
+        }
     }
 
     var api: APIClient {
@@ -68,6 +84,9 @@ final class AppStore {
         isLoading = true
         loadError = nil
         defer { isLoading = false }
+        // Location from the start: it's on the order map, not just for pickups.
+        location.onUpdate = { [weak self] _ in self?.locationDidChange() }
+        location.start()
         do {
             users = try await api.get("/api/users")
             restaurants = try await api.get("/api/restaurants")
@@ -138,27 +157,66 @@ final class AppStore {
 
     func loadQuotes() async {
         for r in restaurants {
+            // Quote the restaurant's quickest item so "ready from ~N min" is the best case.
+            let quickest = r.menu.filter { $0.orderable }.min { ($0.prepMin ?? r.avgPrepMin) < ($1.prepMin ?? r.avgPrepMin) }
+            if let p = try? await pickupQuote(restaurantId: r.id, itemCount: 1, mode: suggestedMode(to: r),
+                                              lines: quickest.map { [OrderLine(itemId: $0.id, quantity: 1)] }) {
+                pickupQuotes[r.id] = p
+            }
             if let q = try? await quote(restaurantId: r.id, itemCount: 2, raining: false) {
                 quotes[r.id] = q
             }
         }
     }
 
+    /// Walk when the restaurant is close, otherwise drive. Without a fix,
+    /// assume driving.
+    func suggestedMode(to r: Restaurant) -> TravelMode {
+        guard let me = location.coordinate else { return .driving }
+        let here = CLLocation(latitude: me.latitude, longitude: me.longitude)
+        let there = CLLocation(latitude: r.lat, longitude: r.lng)
+        return here.distance(from: there) <= 1500 ? .walking : .driving
+    }
+
     func quote(restaurantId: String, itemCount: Int, raining: Bool) async throws -> EtaQuote {
         guard let userId = currentUserId else { throw APIError(message: "No user selected") }
+        let c = location.coordinate
         return try await api.post("/api/predict/eta", body: PredictBody(
-            userId: userId, restaurantId: restaurantId, itemCount: max(1, itemCount), raining: raining))
+            userId: userId, restaurantId: restaurantId, itemCount: max(1, itemCount), raining: raining,
+            lat: c?.latitude, lng: c?.longitude, lines: quoteLines(for: restaurantId)))
     }
 
     // MARK: - Pickup prediction
 
     /// Before ordering: when will it be ready and when should I leave?
-    func pickupQuote(restaurantId: String, itemCount: Int, mode: TravelMode) async throws -> PickupPlan {
+    func pickupQuote(restaurantId: String, itemCount: Int, mode: TravelMode, lines: [OrderLine]? = nil) async throws -> PickupPlan {
         guard let userId = currentUserId else { throw APIError(message: "No user selected") }
         let c = location.coordinate
         return try await api.post("/api/predict/pickup", body: PickupQuoteBody(
             userId: userId, restaurantId: restaurantId, itemCount: max(1, itemCount),
-            lat: c?.latitude, lng: c?.longitude, mode: mode))
+            lat: c?.latitude, lng: c?.longitude, mode: mode, lines: quoteLines(for: restaurantId) ?? lines))
+    }
+
+    /// Active pickup orders that still need leave-time planning.
+    var activePickups: [Order] {
+        orders.filter { $0.isPickup && !$0.status.isClosed && $0.status != .ready }
+    }
+
+    @ObservationIgnored private var lastReplan = Date.distantPast
+
+    /// Movement: re-plan every active pickup (throttled). Runs in the
+    /// background too when "Always" location is granted.
+    private func locationDidChange() {
+        guard !activePickups.isEmpty, Date().timeIntervalSince(lastReplan) > 15 else { return }
+        lastReplan = Date()
+        Task {
+            for order in activePickups { await refreshPickupPlan(order.id) }
+        }
+    }
+
+    /// Keep background tracking on only while a pickup is in progress.
+    func updateBackgroundTracking() {
+        location.setBackgroundTracking(!activePickups.isEmpty)
     }
 
     /// Re-plan from where the phone is now. The backend fires "Time to head
@@ -189,6 +247,12 @@ final class AppStore {
         center.add(UNNotificationRequest(
             identifier: id, content: content,
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)))
+    }
+
+    /// The cart's lines when it belongs to this restaurant, so quotes reflect the items.
+    private func quoteLines(for restaurantId: String) -> [OrderLine]? {
+        guard cartRestaurantId == restaurantId, !cart.isEmpty else { return nil }
+        return cartLines.map { OrderLine(itemId: $0.item.id, quantity: $0.quantity) }
     }
 
     // MARK: - Cart
@@ -233,21 +297,28 @@ final class AppStore {
         guard let userId = currentUserId, let restaurantId = cartRestaurantId else {
             throw APIError(message: "Your cart is empty")
         }
-        let c = fulfillment == .pickup ? location.coordinate : nil
+        let c = location.coordinate
         let body = CreateOrderBody(
             userId: userId,
             restaurantId: restaurantId,
             lines: cartLines.map { OrderLine(itemId: $0.item.id, quantity: $0.quantity) },
             raining: raining,
             fulfillment: fulfillment,
-            pickupLat: c?.latitude,
-            pickupLng: c?.longitude,
-            pickupMode: mode)
+            pickupLat: fulfillment == .pickup ? c?.latitude : nil,
+            pickupLng: fulfillment == .pickup ? c?.longitude : nil,
+            pickupMode: mode,
+            deliveryLat: fulfillment == .delivery ? c?.latitude : nil,
+            deliveryLng: fulfillment == .delivery ? c?.longitude : nil)
         let order: Order = try await api.post("/api/orders", body: body)
         // Ask in context, like real delivery apps; iOS only prompts once.
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
         upsert(order)
         scheduleLeaveReminder(for: order)
+        if fulfillment == .pickup {
+            // Ask once for background tracking so re-planning continues with the app closed.
+            location.requestAlways()
+            updateBackgroundTracking()
+        }
         cart = [:]
         cartRestaurantId = nil
         showCart = false
@@ -272,6 +343,7 @@ final class AppStore {
         } else {
             orders.insert(order, at: 0)
         }
+        updateBackgroundTracking()
     }
 
     // MARK: - Preferences
@@ -294,7 +366,9 @@ final class AppStore {
 
         socketGeneration += 1
         let generation = socketGeneration
-        let task = URLSession.shared.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        request.setValue("1", forHTTPHeaderField: "ngrok-skip-browser-warning")
+        let task = URLSession.shared.webSocketTask(with: request)
         socketTask = task
         task.resume()
         task.sendPing { [weak self] error in

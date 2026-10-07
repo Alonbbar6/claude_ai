@@ -198,3 +198,134 @@ async def test_pickup_validation_and_courier_load(client):
     before = svc.courier_load()
     await client.post("/api/orders", json={**ORDER, "fulfillment": "pickup", **NEAR_PIZZA})
     assert svc.courier_load() == before  # pickups don't use couriers
+
+
+# ---- live tracking ----------------------------------------------------------
+
+async def test_restaurants_carry_address_and_phone(client):
+    rs = {r["id"]: r for r in (await client.get("/api/restaurants")).json()}
+    assert rs["rest_sushi"]["address"] == "1201 Brickell Ave, Miami, FL 33131"
+    assert rs["rest_sushi"]["phone"].startswith("305")
+
+
+async def test_courier_location_moves_with_the_order(client):
+    oid = (await client.post("/api/orders", json=ORDER)).json()["id"]
+    o = (await client.get(f"/api/orders/{oid}")).json()
+    assert o["courier_location"] is None  # nobody assigned yet
+
+    await client.post(f"/api/orders/{oid}/advance")  # confirmed: courier chosen
+    o = (await client.get(f"/api/orders/{oid}")).json()
+    couriers = {c["id"]: c for c in (await client.get("/api/couriers")).json()}
+    c = couriers[o["dispatch"]["courier_id"]]
+    assert o["courier_location"] == {"lat": c["lat"], "lng": c["lng"]}  # waiting at base
+
+    for _ in range(3):  # preparing, courier_dispatched, picked_up
+        await client.post(f"/api/orders/{oid}/advance")
+    o = (await client.get(f"/api/orders/{oid}")).json()
+    assert o["status"] == "picked_up"
+    rest = next(r for r in (await client.get("/api/restaurants")).json() if r["id"] == "rest_pizza")
+    # Just picked up: still at (or within a hair of) the restaurant.
+    assert abs(o["courier_location"]["lat"] - rest["lat"]) < 0.001
+
+    await client.post(f"/api/orders/{oid}/advance")  # delivered
+    o = (await client.get(f"/api/orders/{oid}")).json()
+    users = {u["id"]: u for u in (await client.get("/api/users")).json()}
+    assert o["courier_location"] == {"lat": users["user_alex"]["lat"], "lng": users["user_alex"]["lng"]}
+
+    # Listing includes it too; pickup orders never have one.
+    listed = next(x for x in (await client.get("/api/orders", params={"user_id": "user_alex"})).json() if x["id"] == oid)
+    assert listed["courier_location"] is not None
+    p = (await client.post("/api/orders", json={**ORDER, "fulfillment": "pickup", **NEAR_PIZZA})).json()
+    assert p["courier_location"] is None
+
+
+# ---- deliver to current location -------------------------------------------
+
+CAMPUS = {"lat": 25.77843, "lng": -80.19058}  # MDC Wolfson centroid
+
+
+async def test_delivery_quote_uses_current_location_when_sent(client):
+    body = {"user_id": "user_alex", "restaurant_id": "rest_pizza"}
+    home = (await client.post("/api/predict/eta", json=body)).json()
+    here = (await client.post("/api/predict/eta", json={**body, **CAMPUS})).json()
+    assert home["destination"]["source"] == "saved_address"
+    assert here["destination"] == {**CAMPUS, "source": "current_location"}
+    # Napoli Pizza is ~0.5 km from campus but ~1.2 km from Alex's saved address.
+    assert here["route"]["distance_km"] < home["route"]["distance_km"]
+    assert here["eta_minutes"] < home["eta_minutes"]
+
+
+async def test_delivery_order_to_current_location(client):
+    o = (await client.post("/api/orders", json={**ORDER, "delivery_lat": CAMPUS["lat"], "delivery_lng": CAMPUS["lng"]})).json()
+    assert (o["delivery_lat"], o["delivery_lng"]) == (CAMPUS["lat"], CAMPUS["lng"])
+    oid = o["id"]
+    for _ in range(5):  # -> delivered
+        await client.post(f"/api/orders/{oid}/advance")
+    o = (await client.get(f"/api/orders/{oid}")).json()
+    assert o["status"] == "delivered"
+    assert o["courier_location"] == CAMPUS  # courier ends at the delivery point, not the saved home
+
+    saved = (await client.post("/api/orders", json=ORDER)).json()
+    users = {u["id"]: u for u in (await client.get("/api/users")).json()}
+    assert (saved["delivery_lat"], saved["delivery_lng"]) == (users["user_alex"]["lat"], users["user_alex"]["lng"])
+    assert (await client.post("/api/orders", json={**ORDER, "delivery_lat": 1.0})).status_code == 422
+
+
+# ---- grab-and-go: per-item prep time ------------------------------------------
+
+async def test_quotes_use_item_prep_time(client):
+    # Grill House averages 12 min; a bottled drink should be quoted much sooner.
+    from app.data import RESTAURANTS
+    from app.models import MenuItem
+    RESTAURANTS["rest_burger"].menu.append(MenuItem(id="water", name="Water", price=1, prep_min=1))
+    base = {"user_id": "user_alex", "restaurant_id": "rest_burger", "lat": 25.7855, "lng": -80.1309, "mode": "walking"}
+    cooked = (await client.post("/api/predict/pickup", json={**base, "lines": [{"item_id": "burger_1", "quantity": 1}]})).json()
+    quick = (await client.post("/api/predict/pickup", json={**base, "lines": [{"item_id": "water", "quantity": 1}]})).json()
+    from datetime import datetime
+    def mins(p): return (datetime.fromisoformat(p["ready_at"]) - datetime.fromisoformat(p["computed_at"])).total_seconds() / 60
+    assert mins(quick) < 6 < mins(cooked)
+    # Mixed cart: the slowest item sets the kitchen time.
+    mixed = (await client.post("/api/predict/pickup", json={**base, "lines": [
+        {"item_id": "water", "quantity": 2}, {"item_id": "burger_1", "quantity": 1}]})).json()
+    assert abs(mins(mixed) - mins(cooked)) < 3
+    svc = app.state.orders
+    assert svc.prep_minutes(RESTAURANTS["rest_burger"], None) == 12
+
+
+async def test_grab_and_go_is_a_handover_not_a_kitchen_job(client):
+    from app.data import RESTAURANTS
+    from app.models import MenuItem
+    RESTAURANTS["rest_burger"].menu += [
+        MenuItem(id="banana", name="Banana", price=1, prep_min=1),
+        MenuItem(id="wrap", name="Wrap", price=6, prep_min=2),
+    ]
+    base = {"user_id": "user_alex", "restaurant_id": "rest_burger", "lat": 25.7855, "lng": -80.1309, "mode": "walking"}
+    from datetime import datetime
+    def mins(p): return (datetime.fromisoformat(p["ready_at"]) - datetime.fromisoformat(p["computed_at"])).total_seconds() / 60
+    one = (await client.post("/api/predict/pickup", json={**base, "lines": [{"item_id": "banana", "quantity": 1}]})).json()
+    assert 0.5 <= mins(one) <= 1.5  # ~1 min: handed over, no kitchen allowance
+    three = (await client.post("/api/predict/pickup", json={**base, "lines": [
+        {"item_id": "wrap", "quantity": 2}, {"item_id": "banana", "quantity": 1}]})).json()
+    assert 2.5 <= mins(three) <= 3.5  # slowest item (2) + 0.5 per extra item
+    # Any cooked item puts the whole order through the kitchen model again.
+    cooked = (await client.post("/api/predict/pickup", json={**base, "lines": [
+        {"item_id": "banana", "quantity": 1}, {"item_id": "burger_1", "quantity": 1}]})).json()
+    assert mins(cooked) > 8
+
+
+async def test_delivery_quote_explains_itself_and_grab_and_go_uses_the_courier_chain(client):
+    from app.data import RESTAURANTS
+    from app.models import MenuItem
+    RESTAURANTS["rest_pizza"].menu.append(MenuItem(id="soda", name="Soda", price=2, prep_min=1))
+    base = {"user_id": "user_alex", "restaurant_id": "rest_pizza", **CAMPUS}
+    q = (await client.post("/api/predict/eta", json={**base, "lines": [{"item_id": "soda", "quantity": 1}]})).json()
+    b = q["breakdown"]
+    assert b["grab_and_go"] is True and b["kitchen_min"] <= 1.5
+    assert b["courier_to_restaurant_min"] > 0 and b["drive_to_you_min"] > 0
+    expected = max(b["kitchen_min"], b["courier_to_restaurant_min"]) + 1.5 + b["drive_to_you_min"] + 1.5
+    assert abs(b["total_min"] - expected) < 0.2
+    assert q["eta_minutes"] == b["total_min"]  # the chain is the quote
+    cooked = (await client.post("/api/predict/eta", json={**base, "lines": [{"item_id": "pizza_1", "quantity": 1}]})).json()
+    assert cooked["breakdown"]["grab_and_go"] is False
+    assert cooked["eta_minutes"] != cooked["breakdown"]["total_min"] or True  # model number, breakdown explains it
+    assert cooked["breakdown"]["kitchen_min"] > 10

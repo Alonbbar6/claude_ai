@@ -34,6 +34,7 @@ final class OrderFlowUITests: XCTestCase {
         shot("2_menu")
 
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View cart'")).firstMatch.tap()
+        app.buttons["Delivery"].tap()  // pickup is the default
         XCTAssertTrue(app.staticTexts["Arrives in"].waitForExistence(timeout: 5), "no ETA quote in cart")
         shot("3_cart")
 

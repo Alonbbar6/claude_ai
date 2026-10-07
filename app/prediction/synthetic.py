@@ -52,7 +52,7 @@ def generate(n: int = 6000, seed: int = 42) -> tuple[np.ndarray, np.ndarray, np.
         f = build_features(
             distance_km=distance,
             travel_time_min=travel,
-            prep_time_min=float(rng.choice([10, 12, 15, 18, 20, 22, 25, 30])),
+            prep_time_min=float(rng.choice([2, 3, 5, 8, 10, 12, 15, 18, 20, 22, 25, 30])),
             item_count=int(rng.integers(1, 7)),
             when=when,
             raining=bool(rng.random() < 0.2),

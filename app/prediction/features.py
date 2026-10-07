@@ -11,7 +11,7 @@ from datetime import datetime
 
 FEATURE_NAMES = [
     "distance_km",
-    "travel_time_min",  # from Google Distance Matrix (traffic-aware) or fallback
+    "travel_time_min",  # from the Google Routes API (traffic-aware) or fallback
     "prep_time_min",
     "item_count",
     "hour",

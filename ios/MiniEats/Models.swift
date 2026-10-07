@@ -25,6 +25,8 @@ struct MenuItem: Codable, Identifiable, Hashable {
     var categoryId: String?
     var available: Bool?
     var soldOut: Bool?
+    /// Kitchen minutes for this item; nil = restaurant average. Low values are grab-and-go.
+    var prepMin: Double?
     /// Merchant API only; customers never receive recipes.
     var recipe: [RecipeEntry]?
 
@@ -42,6 +44,8 @@ struct Restaurant: Codable, Identifiable, Hashable {
     let avgPrepMin: Double
     let menu: [MenuItem]
     var categories: [MenuCategory]?
+    var address: String?
+    var phone: String?
 
     /// Menu grouped for display: categories in order, then uncategorised items.
     var sections: [(title: String, items: [MenuItem])] {
@@ -76,6 +80,11 @@ struct OrderLine: Codable, Hashable {
     let quantity: Int
 }
 
+struct LatLngPoint: Codable, Hashable {
+    let lat: Double
+    let lng: Double
+}
+
 struct Route: Codable, Hashable {
     let distanceKm: Double
     let durationMin: Double
@@ -94,6 +103,10 @@ struct EtaQuote: Codable, Hashable {
     let etaAt: Date
     let delayRisk: Double
     let route: Route
+    var destination: QuoteDestination?
+    var breakdown: EtaBreakdown?
+
+    var toCurrentLocation: Bool { destination?.source == "current_location" }
 }
 
 struct DispatchPlan: Codable, Hashable {
@@ -186,6 +199,9 @@ struct PickupPlan: Codable, Hashable {
     let computedAt: Date
 
     var shouldWait: Bool { decision == "wait" }
+    /// Minutes from the quote to the food being ready.
+    var readyInMin: Double { max(0, readyAt.timeIntervalSince(computedAt) / 60) }
+    var verb: String { mode == .driving ? "drive" : "walk" }
 }
 
 struct Order: Codable, Identifiable, Hashable {
@@ -202,9 +218,15 @@ struct Order: Codable, Identifiable, Hashable {
     let currentEta: EtaPrediction?
     let dispatch: DispatchPlan?
     let fulfillment: Fulfillment
+    let pickupLat: Double?
+    let pickupLng: Double?
+    let deliveryLat: Double?
+    let deliveryLng: Double?
     let pickupMode: TravelMode
     let pickup: PickupPlan?
     let readyAt: Date?
+    /// Delivery only: the courier's current (simulated) position, refreshed on each poll.
+    var courierLocation: LatLngPoint?
 
     var itemCount: Int { lines.reduce(0) { $0 + $1.quantity } }
     var isPickup: Bool { fulfillment == .pickup }
@@ -245,6 +267,28 @@ struct PredictBody: Encodable {
     let restaurantId: String
     let itemCount: Int
     let raining: Bool
+    /// Current location: quote delivery to here instead of the saved address.
+    var lat: Double? = nil
+    var lng: Double? = nil
+    /// Cart lines, so kitchen time matches the items (grab-and-go vs cooked).
+    var lines: [OrderLine]? = nil
+}
+
+/// Where a delivery's minutes go (app/orders.py delivery_breakdown).
+struct EtaBreakdown: Codable, Hashable {
+    let kitchenMin: Double
+    let courierToRestaurantMin: Double?
+    let pickupHandoffMin: Double
+    let driveToYouMin: Double
+    let dropoffHandoffMin: Double
+    let totalMin: Double
+    let grabAndGo: Bool
+}
+
+struct QuoteDestination: Codable, Hashable {
+    let lat: Double
+    let lng: Double
+    let source: String  // current_location | saved_address
 }
 
 struct CreateOrderBody: Encodable {
@@ -256,6 +300,8 @@ struct CreateOrderBody: Encodable {
     var pickupLat: Double? = nil
     var pickupLng: Double? = nil
     var pickupMode: TravelMode = .driving
+    var deliveryLat: Double? = nil
+    var deliveryLng: Double? = nil
 }
 
 struct PickupQuoteBody: Encodable {
@@ -265,6 +311,7 @@ struct PickupQuoteBody: Encodable {
     let lat: Double?
     let lng: Double?
     let mode: TravelMode
+    var lines: [OrderLine]? = nil
 }
 
 struct PickupPlanBody: Encodable {

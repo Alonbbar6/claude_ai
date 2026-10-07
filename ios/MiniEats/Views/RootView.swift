@@ -10,6 +10,10 @@ struct RootView: View {
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(AppStore.Tab.home)
 
+            NavigationStack { NearbyMapView() }
+                .tabItem { Label("Map", systemImage: "map.fill") }
+                .tag(AppStore.Tab.map)
+
             OrdersView()
                 .tabItem { Label("Orders", systemImage: "bag.fill") }
                 .badge(store.activeOrderCount)

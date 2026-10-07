@@ -53,6 +53,8 @@ struct APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 10
+        // Lets the app pass straight through ngrok's free-tier browser warning page.
+        request.setValue("1", forHTTPHeaderField: "ngrok-skip-browser-warning")
         if let body {
             request.httpBody = try JSONEncoder.api.encode(body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -109,3 +111,17 @@ enum APIDate {
         return withFraction.date(from: trimmed) ?? plain.date(from: trimmed)
     }
 }
+
+/// A saved server address that can't be right on a physical device: 127.0.0.1
+/// or localhost there is the phone itself. Falls back to the built-in default.
+func usableServerURL(saved: String?, fallback: String) -> String {
+    guard let saved, !saved.isEmpty else { return fallback }
+    #if targetEnvironment(simulator)
+    return saved
+    #else
+    let host = URL(string: saved)?.host?.lowercased() ?? ""
+    let loopback = host == "127.0.0.1" || host == "localhost" || host == "::1"
+    return loopback ? fallback : saved
+    #endif
+}
+

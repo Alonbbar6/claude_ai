@@ -8,3 +8,5 @@ ios/build/
 ios/build_device.txt
 *.xcuserstate
 xcuserdata/
+ios/build-device*/
+.DS_Store

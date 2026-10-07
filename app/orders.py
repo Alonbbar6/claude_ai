@@ -27,7 +27,9 @@ from app.models import (
     CreateOrderRequest,
     DispatchPlan,
     Fulfillment,
+    LatLngPoint,
     Order,
+    OrderLine,
     OrderStatus,
     PickupPlan,
     Restaurant,
@@ -46,12 +48,15 @@ from app.notifications.events import (
 from app.inventory import InventoryService
 from app.pickup import plan_pickup
 from app.prediction.eta import EtaPredictor
-from app.prediction.ready import ReadyTimePredictor
+from app.prediction.ready import ReadyEstimate, ReadyTimePredictor
 
 log = logging.getLogger(__name__)
 
 DELAY_ALERT_MIN = 5.0
 HANDOFF_MIN = 1.5  # bagging/handoff at the restaurant and at the door
+# Items at or under this prep time are grab-and-go: no cooking, so the
+# kitchen model (built for cooked orders) doesn't apply; it's a handover.
+GRAB_AND_GO_MAX_MIN = 3.0
 KITCHEN_STATUSES = (OrderStatus.PLACED, OrderStatus.CONFIRMED, OrderStatus.PREPARING)
 
 
@@ -115,15 +120,38 @@ class OrderService:
             if o.restaurant_id == restaurant_id and o.status in KITCHEN_STATUSES
         ))
 
-    def predict_ready(self, order: Order):
-        r = self.restaurants[order.restaurant_id]
+    def prep_minutes(self, restaurant: Restaurant, lines: list[OrderLine] | None) -> float:
+        """Kitchen time for an order: the slowest item, with per-item times
+        falling back to the restaurant average. No lines -> the average."""
+        if not lines:
+            return restaurant.avg_prep_min
+        by_id = {m.id: m for m in restaurant.menu}
+        times = [
+            by_id[l.item_id].prep_min if by_id[l.item_id].prep_min is not None else restaurant.avg_prep_min
+            for l in lines if l.item_id in by_id
+        ]
+        return max(times) if times else restaurant.avg_prep_min
+
+    def ready_estimate(self, restaurant: Restaurant, lines: list[OrderLine] | None, *, item_count: int, elapsed_min: float = 0.0) -> ReadyEstimate:
+        """Minutes until the food is ready. Grab-and-go orders are a counter
+        handover: prep time plus a little per extra item, tight range. Cooked
+        orders go through the kitchen model."""
+        prep = self.prep_minutes(restaurant, lines)
+        if lines and prep <= GRAB_AND_GO_MAX_MIN:
+            p50 = max(0.5, prep + 0.5 * (item_count - 1) - elapsed_min)
+            return ReadyEstimate(round(p50, 1), round(p50 + 1.0, 1), round(p50 + 2.0, 1))
         return self.ready.predict(
-            prep_time_min=r.avg_prep_min,
-            item_count=order.item_count(),
-            restaurant_busy=self.restaurant_busy(r.id),
+            prep_time_min=prep,
+            item_count=item_count,
+            restaurant_busy=self.restaurant_busy(restaurant.id),
             when=utcnow(),
-            elapsed_min=minutes_since(order.created_at),
+            elapsed_min=elapsed_min,
         )
+
+    def predict_ready(self, order: Order):
+        return self.ready_estimate(
+            self.restaurants[order.restaurant_id], order.lines,
+            item_count=order.item_count(), elapsed_min=minutes_since(order.created_at))
 
     def kitchen_minutes(self, order: Order) -> float:
         """Most likely minutes until the food is ready (model p50)."""
@@ -136,7 +164,7 @@ class OrderService:
         return self.predictor.predict(
             distance_km=order.route.distance_km,
             travel_time_min=order.route.duration_min,
-            prep_time_min=self.restaurants[order.restaurant_id].avg_prep_min,
+            prep_time_min=self.prep_minutes(self.restaurants[order.restaurant_id], order.lines),
             item_count=order.item_count(),
             when=now,
             raining=order.raining,
@@ -164,8 +192,8 @@ class OrderService:
             est = await self.routes.route(
                 origin, LatLng(restaurant.lat, restaurant.lng), mode=req.pickup_mode.value)
         else:
-            est = await self.routes.route(
-                LatLng(restaurant.lat, restaurant.lng), LatLng(user.lat, user.lng))
+            dest = self.delivery_destination(user, req.delivery_lat, req.delivery_lng)
+            est = await self.routes.route(LatLng(restaurant.lat, restaurant.lng), dest)
 
         order = Order(
             user_id=user.id,
@@ -177,6 +205,8 @@ class OrderService:
             pickup_lat=req.pickup_lat if pickup else None,
             pickup_lng=req.pickup_lng if pickup else None,
             pickup_mode=req.pickup_mode,
+            delivery_lat=None if pickup else dest.lat,
+            delivery_lng=None if pickup else dest.lng,
         )
         self.orders[order.id] = order
         if self.inventory:
@@ -254,6 +284,13 @@ class OrderService:
 
     # ---- pickup --------------------------------------------------------
 
+    def delivery_destination(self, user: User, lat: float | None, lng: float | None) -> LatLng:
+        """Where a delivery goes: the phone's current location when the app
+        sent one, else the profile address."""
+        if lat is not None and lng is not None:
+            return LatLng(lat, lng)
+        return LatLng(user.lat, user.lng)
+
     def _pickup_origin(self, user: User, lat: float | None, lng: float | None) -> LatLng:
         """Customer's live location when the app sent one, else their profile address."""
         if lat is not None and lng is not None:
@@ -300,16 +337,12 @@ class OrderService:
     async def quote_pickup(
         self, user: User, restaurant: Restaurant, *, item_count: int,
         lat: float | None, lng: float | None, mode: TravelMode,
+        lines: list[OrderLine] | None = None,
     ) -> PickupPlan:
         """Pickup plan before ordering, as shown in the cart."""
         est = await self.routes.route(
             self._pickup_origin(user, lat, lng), LatLng(restaurant.lat, restaurant.lng), mode=mode.value)
-        ready = self.ready.predict(
-            prep_time_min=restaurant.avg_prep_min,
-            item_count=item_count,
-            restaurant_busy=self.restaurant_busy(restaurant.id),
-            when=utcnow(),
-        )
+        ready = self.ready_estimate(restaurant, lines, item_count=item_count)
         return plan_pickup(now=utcnow(), route=est, mode=mode, ready=ready)
 
     async def _maybe_signal_leave(self, order: Order) -> None:
@@ -317,6 +350,67 @@ class OrderService:
         # on every re-plan; the customer hears it once.
         if order.pickup and order.pickup.decision == "leave_now" and order.status in KITCHEN_STATUSES:
             await self.bus.publish(Event(ORDER_PICKUP_LEAVE, {"order": order}))
+
+    # ---- delivery breakdown ----------------------------------------------
+
+    async def delivery_breakdown(self, restaurant: Restaurant, dest: LatLng, lines: list[OrderLine] | None, item_count: int) -> dict:
+        """Where a delivery's minutes go: kitchen, nearest free courier's leg
+        to the restaurant, handoff, drive to the customer, handoff. For
+        grab-and-go orders this *is* the quote; for cooked orders it explains
+        the model's number."""
+        ready = self.ready_estimate(restaurant, lines, item_count=item_count)
+        free = [c for c in self.couriers.values() if c.active_order_id is None]
+        courier_min = None
+        if free:
+            legs = await asyncio.gather(*(
+                self.routes.route(LatLng(c.lat, c.lng), LatLng(restaurant.lat, restaurant.lng)) for c in free))
+            courier_min = min(l.duration_min for l in legs)
+        to_customer = await self.routes.route(LatLng(restaurant.lat, restaurant.lng), dest)
+        wait_for = max(ready.p50, courier_min if courier_min is not None else ready.p50)
+        total = wait_for + HANDOFF_MIN + to_customer.duration_min + HANDOFF_MIN
+        return {
+            "kitchen_min": ready.p50,
+            "courier_to_restaurant_min": courier_min,
+            "pickup_handoff_min": HANDOFF_MIN,
+            "drive_to_you_min": to_customer.duration_min,
+            "dropoff_handoff_min": HANDOFF_MIN,
+            "total_min": round(total, 1),
+            "grab_and_go": bool(lines) and self.prep_minutes(restaurant, lines) <= GRAB_AND_GO_MAX_MIN,
+        }
+
+    # ---- live tracking ---------------------------------------------------
+
+    def courier_position(self, order: Order) -> LatLngPoint | None:
+        """Where the courier is now, interpolated along the current leg by
+        how far through the stage we are. Real couriers would report GPS."""
+        if order.is_pickup or not order.dispatch:
+            return None
+        courier = self.couriers.get(order.dispatch.courier_id)
+        restaurant = self.restaurants[order.restaurant_id]
+        user = self.users[order.user_id]
+        if courier is None:
+            return None
+        start = (courier.lat, courier.lng)
+        rest = (restaurant.lat, restaurant.lng)
+        home = (order.delivery_lat if order.delivery_lat is not None else user.lat,
+                order.delivery_lng if order.delivery_lng is not None else user.lng)
+        frac = min(1.0, max(0.0, minutes_since(order.updated_at) * 60 / max(self.stage_seconds, 0.01)))
+        if order.status in (OrderStatus.PLACED, OrderStatus.CONFIRMED, OrderStatus.PREPARING):
+            a, b, f = start, start, 0.0
+        elif order.status == OrderStatus.COURIER_DISPATCHED:
+            a, b, f = start, rest, frac
+        elif order.status == OrderStatus.PICKED_UP:
+            a, b, f = rest, home, frac
+        elif order.status == OrderStatus.DELIVERED:
+            a, b, f = home, home, 1.0
+        else:
+            return None
+        return LatLngPoint(lat=a[0] + (b[0] - a[0]) * f, lng=a[1] + (b[1] - a[1]) * f)
+
+    def with_live(self, order: Order) -> Order:
+        """Fill in read-time fields (courier position) before returning an order."""
+        order.courier_location = self.courier_position(order)
+        return order
 
     # ---- delivery ------------------------------------------------------
 
@@ -355,6 +449,7 @@ class OrderService:
         dispatch_at = max(now, ready_at - timedelta(minutes=leg.duration_min))
         arrive_at = dispatch_at + timedelta(minutes=leg.duration_min)
         pickup_at = max(arrive_at, ready_at) + timedelta(minutes=HANDOFF_MIN)
+        # order.route is restaurant -> delivery destination (current location or home).
         delivery_at = pickup_at + timedelta(minutes=order.route.duration_min + HANDOFF_MIN)
 
         order.dispatch = DispatchPlan(

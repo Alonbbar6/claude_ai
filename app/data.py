@@ -25,6 +25,8 @@ def _restaurants() -> list[Restaurant]:
             cuisine="Japanese",
             lat=25.7617,
             lng=-80.1918,
+            address="1201 Brickell Ave, Miami, FL 33131",
+            phone="305-555-0101",
             avg_prep_min=18,
             categories=[
                 MenuCategory(id="cat_sushi_rolls", name="Rolls", sort=0),
@@ -49,6 +51,8 @@ def _restaurants() -> list[Restaurant]:
             cuisine="Italian",
             lat=25.7743,
             lng=-80.1937,
+            address="8 N Miami Ave, Miami, FL 33128",
+            phone="305-555-0102",
             avg_prep_min=22,
             categories=[
                 MenuCategory(id="cat_pizza_pizzas", name="Pizzas", sort=0),
@@ -70,8 +74,10 @@ def _restaurants() -> list[Restaurant]:
             id="rest_burger",
             name="Grill House",
             cuisine="American",
-            lat=25.7907,
-            lng=-80.1300,
+            lat=25.785416,
+            lng=-80.130904,
+            address="1400 Collins Ave, Miami Beach, FL 33139",
+            phone="305-555-0103",
             avg_prep_min=12,
             categories=[
                 MenuCategory(id="cat_grill_burgers", name="Burgers", sort=0),

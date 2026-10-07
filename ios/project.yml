@@ -7,6 +7,9 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ""
+    # Server the apps use until the user sets one in Account / Settings.
+    # Point this at a tunnel (Cloudflare/ngrok) to test on a phone without typing.
+    MINIEATS_SERVER_URL: https://stubble-grumble-same.ngrok-free.dev
 targets:
   MiniEats:
     type: application
@@ -22,7 +25,10 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: Connects to your Mini Eats development server.
-        NSLocationWhenInUseUsageDescription: For pickup orders, your distance to the restaurant tells us when you should leave so you arrive as your food is ready.
+        MiniEatsServerURL: $(MINIEATS_SERVER_URL)
+        NSLocationWhenInUseUsageDescription: Your location is shown on the order map and, for pickup orders, tells us when you should leave so you arrive as your food is ready.
+        NSLocationAlwaysAndWhenInUseUsageDescription: With "Always", we can keep updating when to leave for a pickup order while the app is in the background, so the "Time to head out" alert is on time.
+        UIBackgroundModes: [location]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.minieats.app
@@ -70,6 +76,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: Connects to your Mini Eats development server.
+        MiniEatsServerURL: $(MINIEATS_SERVER_URL)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.minieats.merchant

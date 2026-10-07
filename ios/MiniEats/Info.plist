@@ -20,6 +20,8 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>MiniEatsServerURL</key>
+	<string>$(MINIEATS_SERVER_URL)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
@@ -27,8 +29,14 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to your Mini Eats development server.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>With "Always", we can keep updating when to leave for a pickup order while the app is in the background, so the "Time to head out" alert is on time.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>For pickup orders, your distance to the restaurant tells us when you should leave so you arrive as your food is ready.</string>
+	<string>Your location is shown on the order map and, for pickup orders, tells us when you should leave so you arrive as your food is ready.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

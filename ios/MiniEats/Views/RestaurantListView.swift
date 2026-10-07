@@ -19,14 +19,18 @@ struct RestaurantListView: View {
             } else {
                 List(store.restaurants) { restaurant in
                     NavigationLink(value: restaurant) {
-                        RestaurantRow(restaurant: restaurant, quote: store.quotes[restaurant.id])
+                        RestaurantRow(restaurant: restaurant, pickup: store.pickupQuotes[restaurant.id], quote: store.quotes[restaurant.id])
                     }
                 }
                 .listStyle(.plain)
                 .refreshable { await store.loadQuotes() }
+                // The first GPS fix usually lands after the list loads: re-quote from here.
+                .task(id: store.location.movementKey) {
+                    if store.location.coordinate != nil { await store.loadQuotes() }
+                }
             }
         }
-        .navigationTitle("Mini Eats")
+        .navigationTitle("Order ahead")
         .navigationDestination(for: Restaurant.self) { MenuView(restaurant: $0) }
         .toolbar {
             if store.cartCount > 0 {
@@ -42,7 +46,9 @@ struct RestaurantListView: View {
 }
 
 private struct RestaurantRow: View {
+    @Environment(AppStore.self) private var store
     let restaurant: Restaurant
+    let pickup: PickupPlan?
     let quote: EtaQuote?
 
     var body: some View {
@@ -53,12 +59,10 @@ private struct RestaurantRow: View {
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
-            if let quote {
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(Format.minutes(quote.etaMinutes)).font(.subheadline.bold())
-                    Circle()
-                        .fill(quote.delayRisk >= 0.6 ? .red : quote.delayRisk >= 0.3 ? .orange : .brand)
-                        .frame(width: 8, height: 8)
+            if let pickup {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Ready from ~\(Format.minutes(pickup.readyInMin))").font(.subheadline.bold())
+                    Text("\(Format.minutes(pickup.tripMin)) \(pickup.verb)").font(.caption).foregroundStyle(.secondary)
                 }
             } else {
                 ProgressView()
@@ -69,7 +73,11 @@ private struct RestaurantRow: View {
 
     private var subtitle: String {
         var parts = [restaurant.cuisine]
-        if let quote { parts.append(Format.km(quote.route.distanceKm)) }
+        if let pickup {
+            parts.append(store.location.coordinate != nil ? "\(Format.km(pickup.distanceKm)) from you"
+                                                            : "\(Format.km(pickup.distanceKm)) from saved address")
+        }
+        if let a = restaurant.address, !a.isEmpty { parts.append(a) }
         return parts.joined(separator: " · ")
     }
 }

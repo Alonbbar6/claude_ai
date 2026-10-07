@@ -40,7 +40,7 @@ Tests: `.venv/bin/pytest`
 
 ```
 POST /api/orders
-  └─ maps.route(restaurant → customer)      Google Distance Matrix (duration_in_traffic)
+  └─ maps.route(restaurant → customer)      Google Routes API (TRAFFIC_AWARE)
   └─ predictor.predict(...)                 ETA + delay risk, quoted to the customer
   └─ bus.publish(order.status_changed)      → NotificationService → push/sms/email/ws
 
@@ -78,7 +78,7 @@ comes out: no waiting at the counter, no cold food.
   Calibrated on held-out data (p75 covers ~74% of orders, p90 ~90%). Delivery dispatch
   uses the same model's p50 to time couriers.
 - **Planner** (pure function): `leave_at = p75 ready time − (travel time + parking/walk-in)`,
-  with travel from the customer's live GPS location by car or on foot (Google Distance Matrix
+  with travel from the customer's live GPS location by car or on foot (Google Routes API
   `mode=driving|walking`). It returns `wait` (leave in N min), `leave_now`, `ready`, or
   `too_far`, plus how long the food would sit (`food_wait_min`) or you would wait.
 - **Live re-planning**: the app sends location as you move (`POST /api/orders/{id}/pickup-plan`),
@@ -87,7 +87,7 @@ comes out: no waiting at the counter, no cold food.
 
 ### Routing (`app/maps.py`)
 
-`GoogleMapsProvider` calls the Distance Matrix API with `departure_time=now`, caches
+`GoogleMapsProvider` calls the Routes API `computeRouteMatrix` (traffic-aware for driving), caches
 results for 60 s, and falls back to `HaversineProvider` on any error so an outage or
 bad key never blocks orders. Both return a `RouteEstimate(distance_km, duration_min,
 source)`.

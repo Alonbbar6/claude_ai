@@ -10,6 +10,9 @@ struct OrderDetailView: View {
         ScrollView {
             if let order {
                 VStack(spacing: 16) {
+                    if let r = store.restaurant(order.restaurantId) {
+                        TrackingMap(order: order, restaurant: r, customer: store.currentUser)
+                    }
                     if order.isPickup {
                         PickupHeader(order: order)
                         if let plan = order.pickup, !order.status.isClosed {
@@ -51,7 +54,7 @@ struct OrderDetailView: View {
             guard let o = order, o.isPickup, !o.status.isClosed, store.location.coordinate != nil else { return }
             await store.refreshPickupPlan(orderId)
         }
-        .onDisappear { store.location.stop() }
+
     }
 }
 

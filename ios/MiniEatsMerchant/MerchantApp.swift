@@ -17,7 +17,9 @@ struct MerchantRootView: View {
     @Environment(MerchantStore.self) private var store
 
     var body: some View {
-        if store.restaurant == nil {
+        if store.isBarMade {
+            BarMadeRootView()
+        } else if store.restaurant == nil {
             NavigationStack { RestaurantPickerView() }
         } else {
             TabView {
@@ -60,6 +62,27 @@ struct RestaurantPickerView: View {
                     Text("Server")
                 }
             }
+            Section {
+                Button {
+                    Task { await store.select(MerchantStore.barMadeId) }
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "refrigerator.fill")
+                            .font(.title2).foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.brand, in: RoundedRectangle(cornerRadius: 10))
+                        VStack(alignment: .leading) {
+                            Text("BarMade Kitchen").font(.headline).foregroundStyle(.primary)
+                            Text("Live inventory, menu, orders and alerts").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("barmade-kitchen")
+            } header: {
+                Text("Connected kitchens")
+            } footer: {
+                Text(store.barMadeServerURL)
+            }
             Section("Choose your restaurant") {
                 ForEach(store.restaurants) { r in
                     Button {
@@ -92,7 +115,11 @@ struct MerchantSettingsView: View {
                 if let r = store.restaurant {
                     HStack(spacing: 12) {
                         CuisineIcon(cuisine: r.cuisine, size: 40)
-                        Text(r.name).font(.headline)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.name).font(.headline)
+                            if let a = r.address, !a.isEmpty { Text(a).font(.subheadline).foregroundStyle(.secondary) }
+                            if let p = r.phone, !p.isEmpty { Text(p).font(.subheadline).foregroundStyle(.secondary) }
+                        }
                     }
                 }
                 Button("Switch restaurant") { Task { await store.select(nil) } }

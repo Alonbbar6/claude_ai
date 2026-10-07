@@ -83,6 +83,9 @@ class MenuItem(BaseModel):
     category_id: str | None = None
     available: bool = True  # manager's on/off switch
     sold_out: bool = False  # set by inventory when an ingredient runs short
+    # Kitchen minutes for this item; None = the restaurant's average. Grab-and-go
+    # items (pre-made, bottled) set this low so pickup is quoted in minutes.
+    prep_min: float | None = None
     # ingredient_id -> quantity used per item; drives stock deduction.
     recipe: dict[str, float] = Field(default_factory=dict)
 
@@ -106,6 +109,13 @@ class Restaurant(BaseModel):
     avg_prep_min: float
     menu: list[MenuItem]
     categories: list[MenuCategory] = Field(default_factory=list)
+    address: str = ""  # street address shown to customers and used for directions
+    phone: str = ""
+
+
+class LatLngPoint(BaseModel):
+    lat: float
+    lng: float
 
 
 class Ingredient(BaseModel):
@@ -193,6 +203,10 @@ class CreateOrderRequest(BaseModel):
     pickup_lat: float | None = None
     pickup_lng: float | None = None
     pickup_mode: TravelMode = TravelMode.DRIVING
+    # Delivery only: "deliver to my current location". Falls back to the
+    # profile address when omitted.
+    delivery_lat: float | None = None
+    delivery_lng: float | None = None
 
 
 class EtaPrediction(BaseModel):
@@ -275,6 +289,11 @@ class Order(BaseModel):
     pickup_mode: TravelMode = TravelMode.DRIVING
     pickup: PickupPlan | None = None
     ready_at: datetime | None = None  # actual time the kitchen finished
+    # Delivery: where the courier is right now (simulated), filled in on read.
+    courier_location: LatLngPoint | None = None
+    # Delivery destination actually used (current location or profile address).
+    delivery_lat: float | None = None
+    delivery_lng: float | None = None
 
     @property
     def is_pickup(self) -> bool:
