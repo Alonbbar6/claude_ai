@@ -1,0 +1,549 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		248A53DAB8904A3D3B922F1B /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A5118F0BE42476B10BBF48 /* RootView.swift */; };
+		2582DE6CC335E118EB36A4B5 /* CartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417BE3F21B25D06CC220F5FC /* CartView.swift */; };
+		3748D07B953D92E22FEE6DAE /* OrderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77A38C4F31F0A8AEF9CA1807 /* OrderDetailView.swift */; };
+		3A276FA8CA85F83E6FDD03C8 /* MiniEatsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71E584C1B8905DA37F3B295E /* MiniEatsApp.swift */; };
+		6CDFC16C96EA0620A1B6B23E /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817BB2C78690C10A2457C599 /* AppStore.swift */; };
+		743B7E4AFE92EB85EA8DA88E /* OrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F04A5CC19D0A65FDE85E8663 /* OrdersView.swift */; };
+		769BDFFBAFFE614242F3E06F /* OrderFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CB1C8EA9FEA7106E5C828B /* OrderFlowUITests.swift */; };
+		A04084752A3D48C0286603E3 /* DecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625230F8146DA33D39838081 /* DecodingTests.swift */; };
+		ABF7CABDCFA997BE3F20F1CD /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E33BF6B88BED032C46E256 /* MenuView.swift */; };
+		AF548E7F2E2233407FAD820F /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24BDA47977998F352DCA9534 /* AccountView.swift */; };
+		B0E4FA517A84B33F01064F18 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7A7584A20B0C87DBA3621E /* NotificationsView.swift */; };
+		C69DA27B1F1D05C30069DFE5 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B7711283E12C17B6BB7019 /* Components.swift */; };
+		D1E6780487595AABEC118961 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D9A1595335CE1589DDC95B /* APIClient.swift */; };
+		D3AF192F948CD1E0945602E8 /* RestaurantListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCC312B76ABE53514225BBED /* RestaurantListView.swift */; };
+		F822171F650D59277703FF19 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEAA20C493FB62936A405C8F /* Models.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BC9DB69A567EFB5BFA9A0245 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 98B499AC7706C180764F694B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DCDE18AEB6187BFDCE915A65;
+			remoteInfo = MiniEats;
+		};
+		E8FF6671C73974E0E909C7A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 98B499AC7706C180764F694B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DCDE18AEB6187BFDCE915A65;
+			remoteInfo = MiniEats;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		00FB5195E3AA9C34B7F4C587 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		12CB1C8EA9FEA7106E5C828B /* OrderFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderFlowUITests.swift; sourceTree = "<group>"; };
+		24BDA47977998F352DCA9534 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
+		32D9A1595335CE1589DDC95B /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		417BE3F21B25D06CC220F5FC /* CartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CartView.swift; sourceTree = "<group>"; };
+		625230F8146DA33D39838081 /* DecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodingTests.swift; sourceTree = "<group>"; };
+		636B14A456904ECDF43916F8 /* MiniEats.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MiniEats.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7008F19FB22C524505F5EAF1 /* MiniEatsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MiniEatsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		701C0672B5BB85ED43417134 /* MiniEatsUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MiniEatsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		71E584C1B8905DA37F3B295E /* MiniEatsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniEatsApp.swift; sourceTree = "<group>"; };
+		77A38C4F31F0A8AEF9CA1807 /* OrderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderDetailView.swift; sourceTree = "<group>"; };
+		817BB2C78690C10A2457C599 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		88A5118F0BE42476B10BBF48 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		AC7A7584A20B0C87DBA3621E /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
+		B4E33BF6B88BED032C46E256 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
+		BEAA20C493FB62936A405C8F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		CCC312B76ABE53514225BBED /* RestaurantListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestaurantListView.swift; sourceTree = "<group>"; };
+		D0B7711283E12C17B6BB7019 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		F04A5CC19D0A65FDE85E8663 /* OrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrdersView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		4B8F234441CE16CCA080FA51 /* MiniEats */ = {
+			isa = PBXGroup;
+			children = (
+				32D9A1595335CE1589DDC95B /* APIClient.swift */,
+				817BB2C78690C10A2457C599 /* AppStore.swift */,
+				00FB5195E3AA9C34B7F4C587 /* Info.plist */,
+				71E584C1B8905DA37F3B295E /* MiniEatsApp.swift */,
+				BEAA20C493FB62936A405C8F /* Models.swift */,
+				DA3138B1A905FB7F37FF2017 /* Views */,
+			);
+			path = MiniEats;
+			sourceTree = "<group>";
+		};
+		5DD0648F7DA477D41D0AB96C /* MiniEatsUITests */ = {
+			isa = PBXGroup;
+			children = (
+				12CB1C8EA9FEA7106E5C828B /* OrderFlowUITests.swift */,
+			);
+			path = MiniEatsUITests;
+			sourceTree = "<group>";
+		};
+		74C4EA9DD0FB4E32A40D934B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				636B14A456904ECDF43916F8 /* MiniEats.app */,
+				7008F19FB22C524505F5EAF1 /* MiniEatsTests.xctest */,
+				701C0672B5BB85ED43417134 /* MiniEatsUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C35DD95B610792EBCDB4541B = {
+			isa = PBXGroup;
+			children = (
+				4B8F234441CE16CCA080FA51 /* MiniEats */,
+				E16A6382D84B1B28405067DD /* MiniEatsTests */,
+				5DD0648F7DA477D41D0AB96C /* MiniEatsUITests */,
+				74C4EA9DD0FB4E32A40D934B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DA3138B1A905FB7F37FF2017 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				24BDA47977998F352DCA9534 /* AccountView.swift */,
+				417BE3F21B25D06CC220F5FC /* CartView.swift */,
+				D0B7711283E12C17B6BB7019 /* Components.swift */,
+				B4E33BF6B88BED032C46E256 /* MenuView.swift */,
+				AC7A7584A20B0C87DBA3621E /* NotificationsView.swift */,
+				77A38C4F31F0A8AEF9CA1807 /* OrderDetailView.swift */,
+				F04A5CC19D0A65FDE85E8663 /* OrdersView.swift */,
+				CCC312B76ABE53514225BBED /* RestaurantListView.swift */,
+				88A5118F0BE42476B10BBF48 /* RootView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		E16A6382D84B1B28405067DD /* MiniEatsTests */ = {
+			isa = PBXGroup;
+			children = (
+				625230F8146DA33D39838081 /* DecodingTests.swift */,
+			);
+			path = MiniEatsTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		BB2A09F69801D0F280D943A8 /* MiniEatsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E919EAAA3B695B6E7E21F4C4 /* Build configuration list for PBXNativeTarget "MiniEatsTests" */;
+			buildPhases = (
+				31FFD9FBF950CC7CFCF6F4D5 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C79515DE2BBB11EAB9E81997 /* PBXTargetDependency */,
+			);
+			name = MiniEatsTests;
+			packageProductDependencies = (
+			);
+			productName = MiniEatsTests;
+			productReference = 7008F19FB22C524505F5EAF1 /* MiniEatsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		C2FDAFF651AA1DF5E4C75BD6 /* MiniEatsUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1697BA01365248794F63008F /* Build configuration list for PBXNativeTarget "MiniEatsUITests" */;
+			buildPhases = (
+				1922090E966E03873706598B /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0A7036F36BE35BC3BB48BF56 /* PBXTargetDependency */,
+			);
+			name = MiniEatsUITests;
+			packageProductDependencies = (
+			);
+			productName = MiniEatsUITests;
+			productReference = 701C0672B5BB85ED43417134 /* MiniEatsUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		DCDE18AEB6187BFDCE915A65 /* MiniEats */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6F687BB8FCB4222244CBC98C /* Build configuration list for PBXNativeTarget "MiniEats" */;
+			buildPhases = (
+				8BB89F7647E0687588FD26CE /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MiniEats;
+			packageProductDependencies = (
+			);
+			productName = MiniEats;
+			productReference = 636B14A456904ECDF43916F8 /* MiniEats.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98B499AC7706C180764F694B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					BB2A09F69801D0F280D943A8 = {
+						DevelopmentTeam = "";
+					};
+					C2FDAFF651AA1DF5E4C75BD6 = {
+						DevelopmentTeam = "";
+						TestTargetID = DCDE18AEB6187BFDCE915A65;
+					};
+					DCDE18AEB6187BFDCE915A65 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 0D706DFE956BDFE43FC5BD66 /* Build configuration list for PBXProject "MiniEats" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = C35DD95B610792EBCDB4541B;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DCDE18AEB6187BFDCE915A65 /* MiniEats */,
+				BB2A09F69801D0F280D943A8 /* MiniEatsTests */,
+				C2FDAFF651AA1DF5E4C75BD6 /* MiniEatsUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1922090E966E03873706598B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				769BDFFBAFFE614242F3E06F /* OrderFlowUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		31FFD9FBF950CC7CFCF6F4D5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A04084752A3D48C0286603E3 /* DecodingTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8BB89F7647E0687588FD26CE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D1E6780487595AABEC118961 /* APIClient.swift in Sources */,
+				AF548E7F2E2233407FAD820F /* AccountView.swift in Sources */,
+				6CDFC16C96EA0620A1B6B23E /* AppStore.swift in Sources */,
+				2582DE6CC335E118EB36A4B5 /* CartView.swift in Sources */,
+				C69DA27B1F1D05C30069DFE5 /* Components.swift in Sources */,
+				ABF7CABDCFA997BE3F20F1CD /* MenuView.swift in Sources */,
+				3A276FA8CA85F83E6FDD03C8 /* MiniEatsApp.swift in Sources */,
+				F822171F650D59277703FF19 /* Models.swift in Sources */,
+				B0E4FA517A84B33F01064F18 /* NotificationsView.swift in Sources */,
+				3748D07B953D92E22FEE6DAE /* OrderDetailView.swift in Sources */,
+				743B7E4AFE92EB85EA8DA88E /* OrdersView.swift in Sources */,
+				D3AF192F948CD1E0945602E8 /* RestaurantListView.swift in Sources */,
+				248A53DAB8904A3D3B922F1B /* RootView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0A7036F36BE35BC3BB48BF56 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DCDE18AEB6187BFDCE915A65 /* MiniEats */;
+			targetProxy = E8FF6671C73974E0E909C7A0 /* PBXContainerItemProxy */;
+		};
+		C79515DE2BBB11EAB9E81997 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DCDE18AEB6187BFDCE915A65 /* MiniEats */;
+			targetProxy = BC9DB69A567EFB5BFA9A0245 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		23A550FB439FBCF1A12C233C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minieats.MiniEatsUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MiniEats;
+			};
+			name = Release;
+		};
+		3FE6816C7A0C162B5B6346F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minieats.MiniEatsTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MiniEats.app/MiniEats";
+			};
+			name = Debug;
+		};
+		4FE22FDDF0D4034E49CB0D10 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minieats.MiniEatsUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MiniEats;
+			};
+			name = Debug;
+		};
+		5ECA89A9499A3FE28B4FF973 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = MiniEats/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minieats.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		8111898036EF7E2F44C3F425 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		930D9FCF1CBD08AE32C7612C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = MiniEats/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minieats.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		9DA133ACB7AE1BB9546E7D5B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minieats.MiniEatsTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MiniEats.app/MiniEats";
+			};
+			name = Release;
+		};
+		EBD036327513A354077ABBE6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0D706DFE956BDFE43FC5BD66 /* Build configuration list for PBXProject "MiniEats" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8111898036EF7E2F44C3F425 /* Debug */,
+				EBD036327513A354077ABBE6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		1697BA01365248794F63008F /* Build configuration list for PBXNativeTarget "MiniEatsUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4FE22FDDF0D4034E49CB0D10 /* Debug */,
+				23A550FB439FBCF1A12C233C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6F687BB8FCB4222244CBC98C /* Build configuration list for PBXNativeTarget "MiniEats" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				930D9FCF1CBD08AE32C7612C /* Debug */,
+				5ECA89A9499A3FE28B4FF973 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E919EAAA3B695B6E7E21F4C4 /* Build configuration list for PBXNativeTarget "MiniEatsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3FE6816C7A0C162B5B6346F2 /* Debug */,
+				9DA133ACB7AE1BB9546E7D5B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 98B499AC7706C180764F694B /* Project object */;
+}

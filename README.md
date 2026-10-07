@@ -13,6 +13,10 @@ On top of those, orders are **dispatched by distance**: when the kitchen confirm
 the app routes every free courier to the restaurant and times their departure so
 they arrive as the food comes out.
 
+## iOS app
+
+A SwiftUI client lives in [`ios/`](ios/README.md): browse, cart, checkout, live order tracking and push-style notifications against this backend.
+
 ## Run it
 
 ```bash

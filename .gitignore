@@ -4,3 +4,7 @@ __pycache__/
 models/
 .pytest_cache/
 .env
+ios/build/
+ios/build_device.txt
+*.xcuserstate
+xcuserdata/
