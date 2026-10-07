@@ -10,11 +10,16 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from typing import Literal
 
+from pydantic import BaseModel, Field
+
+from app import data
+from app.catalog import CatalogService, CategoryIn, CategoryUpdate, MenuItemIn, MenuItemUpdate
 from app.data import COURIERS, RESTAURANTS, USERS
+from app.inventory import InventoryService, OutOfStock
 from app.maps import LatLng, RouteProvider, get_provider
-from app.models import CLOSED, Channel, CreateOrderRequest, Fulfillment, NotificationPreferences, TravelMode
+from app.models import CLOSED, Channel, CreateOrderRequest, Fulfillment, Ingredient, NotificationPreferences, TravelMode
 from app.notifications.channels import SimulatedChannel, WebSocketChannel
 from app.notifications.events import EventBus
 from app.notifications.service import NotificationService
@@ -35,6 +40,8 @@ def build_services(
     routes: RouteProvider | None = None,
 ):
     """Wire everything together. Factored out so tests can build a fresh set."""
+    data.reset()
+    inventory = InventoryService(RESTAURANTS, data.seed_ingredients())
     predictor = EtaPredictor()
     predictor.load_or_train()
     ready = ReadyTimePredictor()
@@ -51,7 +58,7 @@ def build_services(
     notifications = NotificationService(bus, channels, USERS, RESTAURANTS)
     orders = OrderService(
         bus, predictor, routes or get_provider(), USERS, RESTAURANTS, COURIERS,
-        ready_predictor=ready, stage_seconds=stage_seconds, seed=seed,
+        ready_predictor=ready, inventory=inventory, stage_seconds=stage_seconds, seed=seed,
     )
     return predictor, bus, ws_channel, notifications, orders
 
@@ -83,7 +90,8 @@ async def index():
 
 @app.get("/api/restaurants")
 async def list_restaurants():
-    return list(RESTAURANTS.values())
+    # Recipes are internal to the kitchen; customers don't need them.
+    return [r.model_dump(mode="json", exclude={"menu": {"__all__": {"recipe"}}}) for r in RESTAURANTS.values()]
 
 
 @app.get("/api/users")
@@ -119,6 +127,8 @@ async def create_order(req: CreateOrderRequest):
         raise HTTPException(422, "send both pickup_lat and pickup_lng, or neither")
     try:
         return await app.state.orders.create(req)
+    except OutOfStock as exc:
+        raise HTTPException(409, str(exc))
     except ValueError as exc:
         raise HTTPException(422, str(exc))
 
@@ -293,6 +303,149 @@ async def websocket_endpoint(ws: WebSocket, user_id: str):
         pass
     finally:
         channel.disconnect(user_id, ws)
+
+
+# ---- merchant: menu catalog & inventory --------------------------------------
+# Restaurant-side API used by the Mini Eats Merchant app. No auth in this demo;
+# a real deployment would scope these routes to the signed-in restaurant.
+
+M = "/api/merchant/restaurants/{rid}"
+
+
+def _inventory() -> InventoryService:
+    return app.state.orders.inventory
+
+
+def _catalog(rid: str) -> CatalogService:
+    if rid not in RESTAURANTS:
+        raise HTTPException(404, "restaurant not found")
+    return CatalogService(RESTAURANTS, _inventory())
+
+
+def _call(fn, *args):
+    """Map service errors to HTTP: KeyError -> 404, ValueError -> 422."""
+    try:
+        return fn(*args)
+    except KeyError:
+        raise HTTPException(404, "not found")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@app.get(M + "/menu")
+async def merchant_menu(rid: str):
+    return _catalog(rid).menu(rid)
+
+
+@app.post(M + "/categories", status_code=201)
+async def add_category(rid: str, req: CategoryIn):
+    return _call(_catalog(rid).add_category, rid, req)
+
+
+@app.put(M + "/categories/{cid}")
+async def update_category(rid: str, cid: str, req: CategoryUpdate):
+    return _call(_catalog(rid).update_category, rid, cid, req)
+
+
+@app.delete(M + "/categories/{cid}", status_code=204)
+async def delete_category(rid: str, cid: str):
+    _call(_catalog(rid).delete_category, rid, cid)
+
+
+class ReorderRequest(BaseModel):
+    ids: list[str]
+
+
+@app.post(M + "/categories/reorder")
+async def reorder_categories(rid: str, req: ReorderRequest):
+    return _call(_catalog(rid).reorder_categories, rid, req.ids)
+
+
+@app.post(M + "/items", status_code=201)
+async def add_item(rid: str, req: MenuItemIn):
+    return _call(_catalog(rid).add_item, rid, req)
+
+
+@app.put(M + "/items/{iid}")
+async def update_item(rid: str, iid: str, req: MenuItemUpdate):
+    return _call(_catalog(rid).update_item, rid, iid, req)
+
+
+@app.delete(M + "/items/{iid}", status_code=204)
+async def delete_item(rid: str, iid: str):
+    _call(_catalog(rid).delete_item, rid, iid)
+
+
+@app.get(M + "/inventory")
+async def list_inventory(rid: str):
+    _catalog(rid)
+    return _inventory().views(rid)
+
+
+class IngredientIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    unit: str = Field(min_length=1, max_length=12)
+    on_hand: float = Field(ge=0)
+    low_threshold: float = Field(ge=0)
+    par: float = Field(gt=0)
+    daily_usage: float = Field(ge=0)
+
+
+class IngredientUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    unit: str | None = Field(default=None, min_length=1, max_length=12)
+    low_threshold: float | None = Field(default=None, ge=0)
+    par: float | None = Field(default=None, gt=0)
+    daily_usage: float | None = Field(default=None, ge=0)
+
+
+@app.post(M + "/inventory", status_code=201)
+async def add_ingredient(rid: str, req: IngredientIn):
+    _catalog(rid)
+    ing = _inventory().add(Ingredient(restaurant_id=rid, **req.model_dump()))
+    return _inventory().view(ing)
+
+
+@app.put(M + "/inventory/{ing_id}")
+async def update_ingredient(rid: str, ing_id: str, req: IngredientUpdate):
+    _catalog(rid)
+    ing = _call(_inventory().update, rid, ing_id, req.model_dump(exclude_unset=True))
+    return _inventory().view(ing)
+
+
+@app.delete(M + "/inventory/{ing_id}", status_code=204)
+async def delete_ingredient(rid: str, ing_id: str):
+    _catalog(rid)
+    _call(_inventory().delete, rid, ing_id)
+
+
+class StockMove(BaseModel):
+    kind: Literal["restock", "waste", "count"]
+    quantity: float = Field(ge=0)  # restock/waste: amount; count: the counted total
+    note: str = Field(default="", max_length=200)
+
+
+@app.post(M + "/inventory/{ing_id}/adjust")
+async def adjust_stock(rid: str, ing_id: str, req: StockMove):
+    _catalog(rid)
+    inv = _inventory()
+    fn = {"restock": inv.restock, "waste": inv.waste, "count": inv.count}[req.kind]
+    ing = _call(fn, rid, ing_id, req.quantity, req.note)
+    return inv.view(ing)
+
+
+@app.get(M + "/inventory/{ing_id}/history")
+async def stock_history(rid: str, ing_id: str):
+    _catalog(rid)
+    _call(_inventory().get, rid, ing_id)
+    return _inventory().history(ing_id)
+
+
+@app.get(M + "/alerts")
+async def inventory_alerts(rid: str):
+    _catalog(rid)
+    return _inventory().alerts_for(rid)
+
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

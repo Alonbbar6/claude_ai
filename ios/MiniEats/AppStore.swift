@@ -103,6 +103,13 @@ final class AppStore {
         UserDefaults.standard.set(id, forKey: "userId")
     }
 
+    /// Re-fetch menus so restaurant-side edits and sell-outs show up.
+    func refreshRestaurants() async {
+        if let fetched: [Restaurant] = try? await api.get("/api/restaurants") {
+            restaurants = fetched
+        }
+    }
+
     func refreshUserData() async {
         await refreshOrders()
         await refreshNotifications()

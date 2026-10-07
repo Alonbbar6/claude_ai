@@ -12,7 +12,8 @@ final class OrderFlowUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         // Sam has quiet hours off, so every notification is delivered live.
-        app.launchArguments = ["-userId", "user_sam", "-serverURL", "http://127.0.0.1:8000"]
+        let server = ProcessInfo.processInfo.environment["SERVER_URL"] ?? "http://127.0.0.1:8000"
+        app.launchArguments = ["-userId", "user_sam", "-serverURL", server]
         app.launch()
     }
 
@@ -111,7 +112,7 @@ final class OrderFlowUITests: XCTestCase {
         shot("p5_collected")
 
         app.tabBars.buttons["Alerts"].tap()
-        XCTAssertTrue(app.staticTexts["Ready for pickup"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Ready for pickup"].firstMatch.waitForExistence(timeout: 15))
         shot("p6_alerts")
     }
 

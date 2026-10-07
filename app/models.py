@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 def utcnow() -> datetime:
@@ -60,10 +60,41 @@ PICKUP_LIFECYCLE = [
 CLOSED = {OrderStatus.DELIVERED, OrderStatus.COLLECTED, OrderStatus.CANCELLED}
 
 
+class MenuCategory(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("cat"))
+    name: str
+    sort: int = 0
+
+
+def recipe_from_wire(v):
+    """Recipes travel as [{"ingredient_id", "quantity"}] so ingredient ids
+    are values, not JSON keys (clients that convert key casing would mangle
+    them). Dicts are accepted too."""
+    if isinstance(v, list):
+        return {e["ingredient_id"]: e["quantity"] for e in v}
+    return v
+
+
 class MenuItem(BaseModel):
-    id: str
+    id: str = Field(default_factory=lambda: new_id("item"))
     name: str
     price: float
+    description: str = ""
+    category_id: str | None = None
+    available: bool = True  # manager's on/off switch
+    sold_out: bool = False  # set by inventory when an ingredient runs short
+    # ingredient_id -> quantity used per item; drives stock deduction.
+    recipe: dict[str, float] = Field(default_factory=dict)
+
+    _recipe_in = field_validator("recipe", mode="before")(classmethod(lambda cls, v: recipe_from_wire(v)))
+
+    @field_serializer("recipe")
+    def _recipe_out(self, v: dict[str, float]):
+        return [{"ingredient_id": k, "quantity": q} for k, q in v.items()]
+
+    @property
+    def orderable(self) -> bool:
+        return self.available and not self.sold_out
 
 
 class Restaurant(BaseModel):
@@ -74,6 +105,39 @@ class Restaurant(BaseModel):
     lng: float
     avg_prep_min: float
     menu: list[MenuItem]
+    categories: list[MenuCategory] = Field(default_factory=list)
+
+
+class Ingredient(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("ing"))
+    restaurant_id: str
+    name: str
+    unit: str  # kg, L, each, sheets...
+    on_hand: float
+    low_threshold: float  # alert at or below this
+    par: float  # restock-to level
+    daily_usage: float  # typical usage per day, the forecast baseline
+
+
+class InventoryAdjustment(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("adj"))
+    restaurant_id: str
+    ingredient_id: str
+    delta: float
+    on_hand_after: float
+    reason: str  # order | cancel | restock | waste | count
+    note: str = ""
+    order_id: str | None = None
+    at: datetime = Field(default_factory=utcnow)
+
+
+class InventoryAlert(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("alr"))
+    restaurant_id: str
+    ingredient_id: str
+    kind: str  # low | out
+    message: str
+    at: datetime = Field(default_factory=utcnow)
 
 
 class Courier(BaseModel):
@@ -139,7 +203,7 @@ class EtaPrediction(BaseModel):
 
 
 class Route(BaseModel):
-    """Restaurant -> customer leg, from Google Distance Matrix or fallback."""
+    """Restaurant -> customer leg, from the Google Routes API or fallback."""
 
     distance_km: float
     duration_min: float

@@ -25,12 +25,23 @@ struct APIClient {
         try await send("PUT", path, body: body)
     }
 
+    func delete(_ path: String) async throws {
+        _ = try await raw("DELETE", path, query: [:], body: Optional<Empty>.none)
+    }
+
     private struct Empty: Encodable {}
     private struct ErrorBody: Decodable { let detail: String }
 
     private func send<T: Decodable, B: Encodable>(
         _ method: String, _ path: String, query: [String: String] = [:], body: B?
     ) async throws -> T {
+        let data = try await raw(method, path, query: query, body: body)
+        return try JSONDecoder.api.decode(T.self, from: data)
+    }
+
+    private func raw<B: Encodable>(
+        _ method: String, _ path: String, query: [String: String], body: B?
+    ) async throws -> Data {
         guard var comps = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
             throw APIError(message: "Bad server URL")
         }
@@ -54,7 +65,7 @@ struct APIClient {
             let detail = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.detail
             throw APIError(message: detail ?? "Server returned \(status)")
         }
-        return try JSONDecoder.api.decode(T.self, from: data)
+        return data
     }
 }
 

@@ -17,6 +17,27 @@ Location is "While Using" only and runs only while a pickup is quoted or tracked
 Live updates arrive over the WebSocket. Each one shows an in-app banner, files an iOS
 local notification, and refreshes the order. Tracking also polls every 3 s as a fallback.
 
+## Eats Merchant (restaurant app)
+
+A second app target, `MiniEatsMerchant` (iPhone + iPad), for restaurant staff. It shares
+`Models.swift`, `APIClient.swift` and `Components.swift` with the customer app.
+
+| Tab | What it does | Backend (`/api/merchant/restaurants/{id}/…`) |
+|---|---|---|
+| **Menu** | Items grouped by category. Each item has an availability switch, a **Sold out** badge with the reason ("Out of beef patties"), and an editor for name, description, price, category and **recipe** (ingredients used per item). Categories can be added, renamed, reordered and deleted | `menu`, `items`, `categories`, `categories/reorder` |
+| **Inventory** | Ingredients with problems first, a stock bar against par, **"Runs out in ~7 h"** and a suggested reorder. Detail view: forecast, portions left, which items use it, **Restock** (prefilled to par), **Stock count**, **Record waste**, and a movement history | `inventory`, `inventory/{id}/adjust`, `inventory/{id}/history` |
+| **Alerts** | Low-stock and out-of-stock alerts, raised when a level is first crossed | `alerts` |
+
+How it connects to customers: orders deduct recipe amounts from stock, and cancellations
+return them. When an ingredient can't cover one portion, the items that use it are
+automatically **sold out** in the customer app, and they come back on restock. Switching an
+item off works the same way. The backend also refuses orders it can't fulfil (409).
+Stock levels refresh every 10 s.
+
+Run: select the **MiniEatsMerchant** scheme, then ⌘R. UI test: `xcodebuild … -scheme MiniEatsMerchant test`.
+Use a fresh backend for it, because it changes menu and stock data.
+Set `TEST_RUNNER_SERVER_URL=http://127.0.0.1:8001` to point any UI test at a separate server.
+
 ## Run
 
 ```bash

@@ -2,7 +2,7 @@
 customer pickup, and simulates the lifecycle.
 
 Routing (distance + traffic-aware travel time) comes from the maps provider
-(Google Distance Matrix when a key is configured).
+(Google Routes API when a key is configured).
 
 Delivery: the ETA model uses the restaurant -> customer travel time as a
 feature. When the kitchen confirms, we build a dispatch plan so the courier
@@ -43,6 +43,7 @@ from app.notifications.events import (
     Event,
     EventBus,
 )
+from app.inventory import InventoryService
 from app.pickup import plan_pickup
 from app.prediction.eta import EtaPredictor
 from app.prediction.ready import ReadyTimePredictor
@@ -73,6 +74,7 @@ class OrderService:
         couriers: dict[str, Courier],
         *,
         ready_predictor: ReadyTimePredictor | None = None,
+        inventory: InventoryService | None = None,
         stage_seconds: float = 4.0,
         plan_refresh_seconds: float = 30.0,
         seed: int | None = None,
@@ -87,6 +89,7 @@ class OrderService:
             ready_predictor = ReadyTimePredictor()
             ready_predictor.load_or_train()
         self.ready = ready_predictor
+        self.inventory = inventory
         self.stage_seconds = stage_seconds
         self.plan_refresh_seconds = plan_refresh_seconds
         self.orders: dict[str, Order] = {}
@@ -152,6 +155,8 @@ class OrderService:
         for line in req.lines:
             if line.item_id not in known:
                 raise ValueError(f"unknown item {line.item_id} for {restaurant.id}")
+        if self.inventory:
+            self.inventory.check(restaurant.id, req.lines)  # raises OutOfStock
 
         pickup = req.fulfillment == Fulfillment.PICKUP
         if pickup:
@@ -174,6 +179,8 @@ class OrderService:
             pickup_mode=req.pickup_mode,
         )
         self.orders[order.id] = order
+        if self.inventory:
+            self.inventory.consume(order)
 
         if pickup:
             est_ready = self.predict_ready(order)
@@ -239,6 +246,8 @@ class OrderService:
         order.updated_at = utcnow()
         order.current_eta = None
         self._release_courier(order)
+        if self.inventory:
+            self.inventory.release(order)
         order.history.append(self._entry(order))
         await self.bus.publish(Event(ORDER_STATUS_CHANGED, {"order": order}))
         return order

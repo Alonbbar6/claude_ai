@@ -3,10 +3,34 @@ import Foundation
 // Mirrors the FastAPI models in app/models.py. JSON keys are snake_case on the
 // wire; JSONDecoder.api converts them to camelCase.
 
+struct MenuCategory: Codable, Identifiable, Hashable {
+    let id: String
+    var name: String
+    var sort: Int
+}
+
+/// One ingredient line of a recipe. Sent as a list (not a dictionary) so
+/// ingredient ids are values the snake_case key conversion can't touch.
+struct RecipeEntry: Codable, Hashable {
+    var ingredientId: String
+    var quantity: Double
+}
+
 struct MenuItem: Codable, Identifiable, Hashable {
     let id: String
     let name: String
     let price: Double
+    // Optional so older payloads still decode.
+    var description: String?
+    var categoryId: String?
+    var available: Bool?
+    var soldOut: Bool?
+    /// Merchant API only; customers never receive recipes.
+    var recipe: [RecipeEntry]?
+
+    var isAvailable: Bool { available ?? true }
+    var isSoldOut: Bool { soldOut ?? false }
+    var orderable: Bool { isAvailable && !isSoldOut }
 }
 
 struct Restaurant: Codable, Identifiable, Hashable {
@@ -17,6 +41,17 @@ struct Restaurant: Codable, Identifiable, Hashable {
     let lng: Double
     let avgPrepMin: Double
     let menu: [MenuItem]
+    var categories: [MenuCategory]?
+
+    /// Menu grouped for display: categories in order, then uncategorised items.
+    var sections: [(title: String, items: [MenuItem])] {
+        let cats = (categories ?? []).sorted { $0.sort < $1.sort }
+        var result = cats.map { c in (c.name, menu.filter { $0.categoryId == c.id }) }
+        let known = Set(cats.map(\.id))
+        let other = menu.filter { $0.categoryId == nil || !known.contains($0.categoryId!) }
+        if !other.isEmpty { result.append((cats.isEmpty ? "Menu" : "More", other)) }
+        return result.filter { !$0.1.isEmpty }.map { (title: $0.0, items: $0.1) }
+    }
 }
 
 struct NotificationPrefs: Codable, Hashable {

@@ -47,7 +47,51 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: MiniEats
+  MiniEatsMerchant:
+    type: application
+    platform: iOS
+    # Shares the customer app's models, networking and UI building blocks.
+    sources:
+      - MiniEatsMerchant
+      - MiniEats/Models.swift
+      - MiniEats/APIClient.swift
+      - MiniEats/Views/Components.swift
+    info:
+      path: MiniEatsMerchant/Info.plist
+      properties:
+        CFBundleDisplayName: Eats Merchant
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: Connects to your Mini Eats development server.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.minieats.merchant
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+  MiniEatsMerchantUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [MiniEatsMerchantUITests]
+    dependencies:
+      - target: MiniEatsMerchant
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: MiniEatsMerchant
 schemes:
+  MiniEatsMerchant:
+    build:
+      targets:
+        MiniEatsMerchant: all
+    test:
+      targets: [MiniEatsMerchantUITests]
   MiniEats:
     build:
       targets:

@@ -5,6 +5,14 @@ enum Format {
     static func money(_ v: Double) -> String { v.formatted(.currency(code: "USD")) }
     static func time(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
     static func km(_ v: Double) -> String { String(format: "%.1f km", v) }
+    /// Stock quantities: up to 2 decimals, no trailing zeros ("1.2", "14").
+    static func qty(_ v: Double) -> String { v.formatted(.number.precision(.fractionLength(0...2))) }
+    /// "~45 min", "~3 h", "~2 d".
+    static func duration(hours h: Double) -> String {
+        if h < 1 { return "~\(max(1, Int((h * 60).rounded()))) min" }
+        if h < 48 { return "~\(Int(h.rounded())) h" }
+        return "~\(Int((h / 24).rounded())) d"
+    }
 }
 
 extension Color {
