@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Eats</title>
+<style>
+  :root { --bg:#fafafa; --card:#fff; --ink:#1a1a1a; --muted:#666; --line:#e5e5e5; --accent:#06c167; --warn:#d9480f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 20px; background:#000; color:#fff; font-weight:700; font-size:18px; display:flex; justify-content:space-between; align-items:center; }
+  header select { font:inherit; padding:4px 8px; border-radius:6px; }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px; max-width:1100px; margin:0 auto; }
+  @media (max-width:800px){ main { grid-template-columns:1fr; } }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  h2 { margin:0 0 10px; font-size:16px; }
+  .rest { border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:8px; cursor:pointer; }
+  .rest.active { border-color:var(--accent); background:#f0fbf5; }
+  .rest small { color:var(--muted); }
+  .menu label { display:flex; justify-content:space-between; padding:4px 0; }
+  .menu input { width:50px; }
+  .quote { margin:10px 0; padding:10px; background:#f4f4f4; border-radius:8px; }
+  .risk { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; color:#fff; background:var(--accent); }
+  .risk.high { background:var(--warn); }
+  button { font:inherit; padding:9px 14px; border:0; border-radius:8px; background:#000; color:#fff; cursor:pointer; }
+  button.sec { background:#eee; color:#000; }
+  button:disabled { opacity:.4; cursor:default; }
+  .order { border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:8px; }
+  .steps { display:flex; gap:4px; margin:6px 0; }
+  .step { flex:1; height:6px; border-radius:3px; background:#e5e5e5; }
+  .step.done { background:var(--accent); }
+  .ntf { border-left:3px solid var(--accent); padding:6px 10px; margin-bottom:6px; background:#fafafa; }
+  .ntf.urgent { border-color:var(--warn); }
+  .ntf .meta { color:var(--muted); font-size:12px; }
+  .chan { display:inline-block; font-size:11px; padding:0 6px; border-radius:4px; margin-right:4px; background:#e5e5e5; }
+  .chan.sent { background:#d3f9e0; } .chan.failed { background:#ffd8d8; } .chan.deferred { background:#fff3bf; }
+  .toast { position:fixed; right:16px; bottom:16px; background:#000; color:#fff; padding:12px 16px; border-radius:10px; max-width:320px; box-shadow:0 8px 24px rgba(0,0,0,.25); animation:in .2s; }
+  @keyframes in { from { transform:translateY(10px); opacity:0 } }
+  .muted { color:var(--muted); font-size:13px; }
+  .plan { margin-top:6px; padding:8px; background:#f4f4f4; border-radius:8px; font-size:13px; line-height:1.6; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<header>
+  <span>🍔 Mini Eats</span>
+  <span class="row"><span class="muted" style="color:#aaa">Logged in as</span> <select id="user"></select> <span id="wsdot" title="websocket">●</span></span>
+</header>
+<main>
+  <section>
+    <h2>Order</h2>
+    <div id="restaurants"></div>
+    <div id="menu" class="menu"></div>
+    <label class="row"><input type="checkbox" id="rain"> It's raining</label>
+    <div class="quote" id="quote">Pick a restaurant to see a predicted ETA.</div>
+    <button id="place" disabled>Place order</button>
+  </section>
+
+  <section>
+    <h2>Your orders</h2>
+    <div id="orders" class="muted">No orders yet.</div>
+  </section>
+
+  <section>
+    <h2>Notifications</h2>
+    <div class="muted" id="prefs"></div>
+    <div id="ntfs" class="muted">Nothing yet.</div>
+  </section>
+
+  <section>
+    <h2>Model</h2>
+    <div id="model" class="muted">loading…</div>
+  </section>
+</main>
+
+<script>
+const STEPS = ["placed","confirmed","preparing","courier_dispatched","picked_up","delivered"];
+let users=[], restaurants=[], userId=null, restId=null, ws=null;
+
+const $ = s => document.querySelector(s);
+const api = (p, o={}) => fetch(p, {headers:{"content-type":"application/json"}, ...o}).then(r => r.json());
+
+async function init() {
+  [users, restaurants] = await Promise.all([api("/api/users"), api("/api/restaurants")]);
+  $("#user").innerHTML = users.map(u => `<option value="${u.id}">${u.name}</option>`).join("");
+  $("#user").onchange = () => selectUser($("#user").value);
+  $("#restaurants").innerHTML = restaurants.map(r =>
+    `<div class="rest" data-id="${r.id}"><b>${r.name}</b> <small>· ${r.cuisine} · ~${r.avg_prep_min} min prep</small></div>`).join("");
+  document.querySelectorAll(".rest").forEach(el => el.onclick = () => selectRestaurant(el.dataset.id));
+  $("#rain").onchange = quote;
+  $("#place").onclick = placeOrder;
+  selectUser(users[0].id);
+  const m = await api("/api/predict/model");
+  $("#model").innerHTML = `Gradient-boosted ETA regressor · MAE <b>${m.metrics.eta_mae_min.toFixed(1)} min</b> · delay-risk AUC <b>${m.metrics.delay_auc.toFixed(2)}</b><br>
+    Top features: ${Object.entries(m.feature_importance).slice(0,4).map(([k,v])=>`${k} (${(v*100).toFixed(0)}%)`).join(", ")}`;
+}
+
+function selectUser(id) {
+  userId = id; $("#user").value = id;
+  const u = users.find(x => x.id === id);
+  $("#prefs").textContent = `Channels: ${u.prefs.channels.join(", ")} · quiet hours ${u.prefs.quiet_start===u.prefs.quiet_end ? "off" : u.prefs.quiet_start+":00–"+u.prefs.quiet_end+":00"}`;
+  connectWs(); quote(); refreshOrders(); refreshNtfs();
+}
+
+function connectWs() {
+  if (ws) ws.close();
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/${userId}`);
+  ws.onopen = () => $("#wsdot").style.color = "#06c167";
+  ws.onclose = () => $("#wsdot").style.color = "#d9480f";
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "notification") { toast(msg.data); refreshOrders(); refreshNtfs(); }
+  };
+}
+
+function selectRestaurant(id) {
+  restId = id;
+  document.querySelectorAll(".rest").forEach(el => el.classList.toggle("active", el.dataset.id === id));
+  const r = restaurants.find(x => x.id === id);
+  $("#menu").innerHTML = r.menu.map(m =>
+    `<label><span>${m.name} <span class="muted">$${m.price.toFixed(2)}</span></span><input type="number" min="0" value="0" data-id="${m.id}"></label>`).join("");
+  document.querySelectorAll("#menu input").forEach(i => i.oninput = quote);
+  $("#place").disabled = false;
+  quote();
+}
+
+function lines() {
+  return [...document.querySelectorAll("#menu input")].map(i => ({item_id:i.dataset.id, quantity:+i.value})).filter(l => l.quantity > 0);
+}
+
+async function quote() {
+  if (!restId) return;
+  const count = Math.max(1, lines().reduce((a,l)=>a+l.quantity,0));
+  const p = await api("/api/predict/eta", {method:"POST", body:JSON.stringify({user_id:userId, restaurant_id:restId, item_count:count, raining:$("#rain").checked})});
+  $("#quote").innerHTML = `Predicted ETA <b>${Math.round(p.eta_minutes)} min</b> &nbsp; ${risk(p.delay_risk)}
+    <div class="muted">${p.route.distance_km.toFixed(1)} km · ${Math.round(p.route.duration_min)} min drive (${p.route.source === "google" ? "Google Maps, live traffic" : "estimated — no Google key"}) · courier load ${p.features.courier_load.toFixed(2)} · restaurant backlog ${p.features.restaurant_busy}</div>`;
+}
+
+const risk = r => `<span class="risk ${r >= 0.6 ? "high" : ""}">${r >= 0.6 ? "high" : r >= 0.3 ? "medium" : "low"} delay risk ${(r*100).toFixed(0)}%</span>`;
+
+async function placeOrder() {
+  const ls = lines();
+  if (!ls.length) { alertBox("Add at least one item."); return; }
+  await api("/api/orders", {method:"POST", body:JSON.stringify({user_id:userId, restaurant_id:restId, lines:ls, raining:$("#rain").checked})});
+  refreshOrders();
+}
+
+async function refreshOrders() {
+  const orders = await api(`/api/orders?user_id=${userId}`);
+  if (!orders.length) { $("#orders").textContent = "No orders yet."; return; }
+  $("#orders").innerHTML = orders.map(o => {
+    const r = restaurants.find(x => x.id === o.restaurant_id);
+    const idx = STEPS.indexOf(o.status);
+    const open = !["delivered","cancelled"].includes(o.status);
+    const eta = o.current_eta;
+    return `<div class="order"><div class="row" style="justify-content:space-between"><b>${r.name}</b><span>${o.status.replace("_"," ")}</span></div>
+      <div class="steps">${STEPS.map((s,i)=>`<div class="step ${i<=idx?"done":""}" title="${s}"></div>`).join("")}</div>
+      ${eta ? `ETA <b>${Math.round(eta.eta_minutes)} min</b> ${risk(eta.delay_risk)}` : `<span class="muted">quoted ${Math.round(o.quoted_eta.eta_minutes)} min</span>`}
+      <div class="muted">${o.route.distance_km.toFixed(1)} km · ${Math.round(o.route.duration_min)} min drive · ${o.route.source}</div>
+      ${o.dispatch ? dispatchHtml(o.dispatch) : ""}
+      <div class="row" style="margin-top:6px">
+        <button class="sec" ${open?"":"disabled"} onclick="act('${o.id}','advance')">Advance</button>
+        <button class="sec" ${open?"":"disabled"} onclick="act('${o.id}','refresh-eta')">Simulate demand spike</button>
+        <button class="sec" ${open?"":"disabled"} onclick="act('${o.id}','cancel')">Cancel</button>
+      </div></div>`;
+  }).join("");
+}
+
+const t = iso => new Date(iso).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+function dispatchHtml(d) {
+  return `<div class="plan"><b>Dispatch plan</b> · ${d.courier_name} is ${d.courier_to_restaurant_km.toFixed(1)} km / ${Math.round(d.courier_to_restaurant_min)} min from the restaurant<br>
+    food ready <b>${t(d.ready_at)}</b> → courier leaves <b>${t(d.dispatch_at)}</b> → pickup <b>${t(d.expected_pickup_at)}</b> → delivery <b>${t(d.expected_delivery_at)}</b>
+    ${d.pickup_delay_min > 0 ? `<span class="risk high">food waits ${d.pickup_delay_min} min — no closer courier</span>` : `<span class="risk">arrives as food is ready</span>`}</div>`;
+}
+
+async function act(id, what) { await api(`/api/orders/${id}/${what}`, {method:"POST"}); refreshOrders(); refreshNtfs(); }
+
+async function refreshNtfs() {
+  const ns = await api(`/api/notifications?user_id=${userId}`);
+  if (!ns.length) { $("#ntfs").textContent = "Nothing yet."; return; }
+  $("#ntfs").innerHTML = ns.map(n => `<div class="ntf ${n.urgent?"urgent":""}"><b>${n.title}</b> — ${n.body}
+    <div class="meta">${new Date(n.created_at).toLocaleTimeString()} · ${n.deliveries.map(d=>`<span class="chan ${d.status}" title="${d.detail}">${d.channel} ${d.status}${d.attempts>1?" ×"+d.attempts:""}</span>`).join("")}</div></div>`).join("");
+}
+
+function toast(n) {
+  const el = document.createElement("div"); el.className = "toast";
+  el.innerHTML = `<b>${n.title}</b><br>${n.body}`;
+  document.body.appendChild(el); setTimeout(() => el.remove(), 4000);
+}
+function alertBox(msg) { toast({title:"Oops", body:msg}); }
+
+init();
+</script>
+</body>
+</html>

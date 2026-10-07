@@ -1,0 +1,243 @@
+"""FastAPI entry point. Run with: uvicorn app.main:app --reload"""
+
+from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from app.data import COURIERS, RESTAURANTS, USERS
+from app.maps import LatLng, RouteProvider, get_provider
+from app.models import CLOSED, Channel, CreateOrderRequest, NotificationPreferences
+from app.notifications.channels import SimulatedChannel, WebSocketChannel
+from app.notifications.events import EventBus
+from app.notifications.service import NotificationService
+from app.orders import OrderService
+from app.prediction.eta import EtaPredictor
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+
+def build_services(
+    *,
+    stage_seconds: float = 4.0,
+    failure_rate: float = 0.15,
+    seed=None,
+    routes: RouteProvider | None = None,
+):
+    """Wire everything together. Factored out so tests can build a fresh set."""
+    predictor = EtaPredictor()
+    predictor.load_or_train()
+
+    bus = EventBus()
+    ws_channel = WebSocketChannel()
+    channels = {
+        Channel.PUSH: SimulatedChannel(Channel.PUSH, failure_rate, seed),
+        Channel.SMS: SimulatedChannel(Channel.SMS, failure_rate, seed),
+        Channel.EMAIL: SimulatedChannel(Channel.EMAIL, failure_rate, seed),
+        Channel.WEBSOCKET: ws_channel,
+    }
+    notifications = NotificationService(bus, channels, USERS, RESTAURANTS)
+    orders = OrderService(
+        bus, predictor, routes or get_provider(), USERS, RESTAURANTS, COURIERS,
+        stage_seconds=stage_seconds, seed=seed,
+    )
+    return predictor, bus, ws_channel, notifications, orders
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    (
+        app.state.predictor,
+        app.state.bus,
+        app.state.ws_channel,
+        app.state.notifications,
+        app.state.orders,
+    ) = build_services()
+    yield
+    await app.state.orders.shutdown()
+
+
+app = FastAPI(title="Mini Eats", lifespan=lifespan)
+
+
+# ---- UI ----------------------------------------------------------------
+
+@app.get("/", include_in_schema=False)
+async def index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+# ---- catalogue -----------------------------------------------------------
+
+@app.get("/api/restaurants")
+async def list_restaurants():
+    return list(RESTAURANTS.values())
+
+
+@app.get("/api/users")
+async def list_users():
+    return list(USERS.values())
+
+
+@app.get("/api/couriers")
+async def list_couriers():
+    return list(COURIERS.values())
+
+
+@app.put("/api/users/{user_id}/preferences")
+async def update_preferences(user_id: str, prefs: NotificationPreferences):
+    user = USERS.get(user_id)
+    if not user:
+        raise HTTPException(404, "user not found")
+    user.prefs = prefs
+    return user
+
+
+# ---- orders --------------------------------------------------------------
+
+@app.post("/api/orders", status_code=201)
+async def create_order(req: CreateOrderRequest):
+    if req.user_id not in USERS:
+        raise HTTPException(404, "user not found")
+    if req.restaurant_id not in RESTAURANTS:
+        raise HTTPException(404, "restaurant not found")
+    if not req.lines:
+        raise HTTPException(422, "order has no items")
+    try:
+        return await app.state.orders.create(req)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@app.get("/api/orders")
+async def list_orders(user_id: str | None = None):
+    orders = app.state.orders.orders.values()
+    if user_id:
+        orders = [o for o in orders if o.user_id == user_id]
+    return sorted(orders, key=lambda o: o.created_at, reverse=True)
+
+
+def _order_or_404(order_id: str):
+    order = app.state.orders.orders.get(order_id)
+    if not order:
+        raise HTTPException(404, "order not found")
+    return order
+
+
+@app.get("/api/orders/{order_id}")
+async def get_order(order_id: str):
+    return _order_or_404(order_id)
+
+
+@app.get("/api/orders/{order_id}/dispatch")
+async def get_dispatch_plan(order_id: str):
+    order = _order_or_404(order_id)
+    if not order.dispatch:
+        raise HTTPException(404, "no dispatch plan yet (order not confirmed)")
+    return order.dispatch
+
+
+@app.post("/api/orders/{order_id}/advance")
+async def advance_order(order_id: str):
+    """Manually step the order forward (useful for demos and tests)."""
+    _order_or_404(order_id)
+    return await app.state.orders.advance(order_id)
+
+
+@app.post("/api/orders/{order_id}/cancel")
+async def cancel_order(order_id: str):
+    _order_or_404(order_id)
+    return await app.state.orders.cancel(order_id)
+
+
+@app.post("/api/orders/{order_id}/refresh-eta")
+async def refresh_eta(order_id: str, demand_shock: float = 1.5):
+    """Re-run the model with a simulated demand spike; triggers a delay alert
+    if the ETA slips by 5+ minutes."""
+    order = _order_or_404(order_id)
+    if order.status in CLOSED:
+        raise HTTPException(409, "order is closed")
+    return await app.state.orders.refresh_eta(order, jitter=demand_shock)
+
+
+# ---- prediction ----------------------------------------------------------
+
+class PredictRequest(BaseModel):
+    user_id: str
+    restaurant_id: str
+    item_count: int = 2
+    raining: bool = False
+
+
+@app.post("/api/predict/eta")
+async def predict_eta(req: PredictRequest):
+    """Quote an ETA before ordering (what a customer sees on the menu page).
+    Routes the restaurant -> customer leg first so the quote reflects
+    real distance and current traffic."""
+    user, rest = USERS.get(req.user_id), RESTAURANTS.get(req.restaurant_id)
+    if not user or not rest:
+        raise HTTPException(404, "user or restaurant not found")
+    svc: OrderService = app.state.orders
+    route = await svc.routes.route(LatLng(rest.lat, rest.lng), LatLng(user.lat, user.lng))
+    pred = app.state.predictor.predict(
+        distance_km=route.distance_km,
+        travel_time_min=route.duration_min,
+        prep_time_min=rest.avg_prep_min,
+        item_count=req.item_count,
+        when=datetime.now(timezone.utc),
+        raining=req.raining,
+        courier_load=svc.courier_load(),
+        restaurant_busy=svc.restaurant_busy(rest.id),
+    )
+    return {**pred.model_dump(mode="json"), "route": route.__dict__}
+
+
+@app.get("/api/predict/model")
+async def model_info():
+    p = app.state.predictor
+    return {"metrics": p.metrics, "feature_importance": p.feature_importance()}
+
+
+# ---- notifications -------------------------------------------------------
+
+@app.get("/api/notifications")
+async def list_notifications(user_id: str):
+    svc: NotificationService = app.state.notifications
+    return [
+        {**n.model_dump(mode="json"), "deliveries": svc.deliveries_for(n.id)}
+        for n in reversed(svc.for_user(user_id))
+    ]
+
+
+@app.post("/api/notifications/flush-deferred")
+async def flush_deferred():
+    return {"sent": await app.state.notifications.flush_deferred()}
+
+
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(ws: WebSocket, user_id: str):
+    if user_id not in USERS:
+        await ws.close(code=4404)
+        return
+    channel: WebSocketChannel = app.state.ws_channel
+    await ws.accept()
+    channel.connect(user_id, ws)
+    try:
+        while True:
+            await ws.receive_text()  # keepalive; client never needs to send
+    except WebSocketDisconnect:
+        pass
+    finally:
+        channel.disconnect(user_id, ws)
+
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
