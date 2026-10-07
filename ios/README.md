@@ -5,10 +5,14 @@ SwiftUI client (iOS 17+) for the Python/FastAPI backend in the repo root. Uber E
 | Tab | What it does | Backend |
 |---|---|---|
 | **Home** | Restaurants with a live ML-predicted ETA and distance → menu → cart | `GET /api/restaurants`, `POST /api/predict/eta` |
-| **Cart** (sheet) | Line items, total, ETA quote that re-predicts as the cart / weather changes, place order | `POST /api/predict/eta`, `POST /api/orders` |
-| **Orders** | Live tracking: ETA, delay risk, status timeline, route, courier dispatch plan, per-order updates, demo controls | `GET /api/orders/{id}`, `/advance`, `/refresh-eta`, `/cancel` |
+| **Cart** (sheet) | Line items, total, **Delivery / Pickup**. Delivery: ETA quote that re-predicts as the cart or weather changes. Pickup: food-ready time, your trip (drive/walk from your GPS location), **when to leave** | `POST /api/predict/eta`, `POST /api/predict/pickup`, `POST /api/orders` |
+| **Orders** | Delivery: ETA, delay risk, timeline, route, courier dispatch plan. Pickup: live **"Leave in m:ss"** countdown, re-planned as you move, Drive/Walk switch, **Get directions** (Apple Maps), **I've picked it up** | `GET /api/orders/{id}`, `/pickup-plan`, `/collect`, `/advance`, `/refresh-eta`, `/cancel` |
 | **Alerts** | Every notification with per-channel delivery status (push/SMS/email/in-app, retries) | `GET /api/notifications`, `WS /ws/{user_id}` |
 | **Account** | Switch user, notification channels, quiet hours (saved to backend), server URL | `PUT /api/users/{id}/preferences` |
+
+For pickup, the app also schedules a local **"Time to head out"** reminder at the planned
+leave time. It fires even if the app is suspended and is replaced if the server sends its own.
+Location is "While Using" only and runs only while a pickup is quoted or tracked.
 
 Live updates arrive over the WebSocket. Each one shows an in-app banner, files an iOS
 local notification, and refreshes the order. Tracking also polls every 3 s as a fallback.
@@ -38,8 +42,10 @@ xcodebuild -project MiniEats.xcodeproj -scheme MiniEats \
 ```
 
 - `MiniEatsTests`: JSON contract with the Python models (snake_case, microsecond ISO dates, nulls).
-- `MiniEatsUITests`: end-to-end with the backend running. It browses, adds to cart, checks out,
-  tracks the order until it's delivered, and checks the notifications. Set
+- `MiniEatsUITests`: end-to-end with the backend running. Delivery: browse, add to cart, check out,
+  track until delivered, check notifications. Pickup: choose Pickup, check the leave
+  countdown, switch to Walk (it re-plans), advance until ready, mark it picked up. Place the
+  simulator near Grill House first: `xcrun simctl location booted set 25.7930,-80.1330`. Set
   `TEST_RUNNER_SHOT_DIR=/path` to save a screenshot of each step.
 
 ## Layout

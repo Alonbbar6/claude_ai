@@ -107,3 +107,94 @@ async def test_dispatch_plan_available_after_confirmation(client):
     assert "courier_dispatched" in kinds
     couriers = {c["id"]: c for c in (await client.get("/api/couriers")).json()}
     assert couriers[plan["courier_id"]]["active_order_id"] == oid
+
+
+# ---- pickup -----------------------------------------------------------------
+
+# Napoli Pizza is at 25.7743,-80.1937.
+NEAR_PIZZA = {"pickup_lat": 25.7760, "pickup_lng": -80.1940}   # ~0.2 km
+FAR_FROM_PIZZA = {"pickup_lat": 25.9500, "pickup_lng": -80.1200}  # ~21 km
+
+
+async def kinds_for(client, user_id="user_alex"):
+    return [n["kind"] for n in (await client.get("/api/notifications", params={"user_id": user_id})).json()]
+
+
+async def test_pickup_quote_before_ordering(client):
+    body = {"user_id": "user_alex", "restaurant_id": "rest_pizza", "item_count": 3, **{"lat": 25.776, "lng": -80.194}}
+    plan = (await client.post("/api/predict/pickup", json=body)).json()
+    assert plan["decision"] == "wait"
+    assert plan["ready_at"] <= plan["target_arrival_at"] <= plan["ready_by"]
+    assert plan["leave_at"] < plan["arrive_at"] == plan["target_arrival_at"]
+    walk = (await client.post("/api/predict/pickup", json={**body, "mode": "walking"})).json()
+    assert walk["mode"] == "walking" and walk["travel_min"] > plan["travel_min"]
+
+
+async def test_nearby_pickup_waits_then_ready_then_collected(client):
+    r = await client.post("/api/orders", json={**ORDER, "fulfillment": "pickup", **NEAR_PIZZA})
+    assert r.status_code == 201, r.text
+    order = r.json()
+    assert order["fulfillment"] == "pickup"
+    assert order["quoted_eta"] is None and order["dispatch"] is None
+    assert order["pickup"]["decision"] == "wait"
+    assert order["route"]["distance_km"] < 1
+
+    kinds = await kinds_for(client)
+    assert kinds == ["placed"]  # no "leave now" yet: you're close and it's not ready
+    n = (await client.get("/api/notifications", params={"user_id": "user_alex"})).json()[0]
+    assert "We'll tell you when to leave" in n["body"]
+
+    oid = order["id"]
+    statuses = []
+    for _ in range(3):
+        statuses.append((await client.post(f"/api/orders/{oid}/advance")).json()["status"])
+    assert statuses == ["confirmed", "preparing", "ready"]
+    o = (await client.get(f"/api/orders/{oid}")).json()
+    assert o["ready_at"] and o["pickup"]["decision"] == "ready"
+    assert "ready" in await kinds_for(client)
+
+    # The "Demand spike" control is delivery-only.
+    assert (await client.post(f"/api/orders/{oid}/refresh-eta")).status_code == 409
+
+    o = (await client.post(f"/api/orders/{oid}/collect")).json()
+    assert o["status"] == "collected"
+    assert (await client.post(f"/api/orders/{oid}/collect")).status_code == 409
+
+
+async def test_far_pickup_says_leave_now_once(client):
+    order = (await client.post("/api/orders", json={**ORDER, "fulfillment": "pickup", **FAR_FROM_PIZZA})).json()
+    assert order["pickup"]["decision"] == "leave_now"
+    oid = order["id"]
+    # Moving and re-planning keeps it "leave now", but the alert fires once.
+    for lat in (25.94, 25.93):
+        o = (await client.post(f"/api/orders/{oid}/pickup-plan", json={"lat": lat, "lng": -80.12})).json()
+        assert o["pickup"]["decision"] == "leave_now"
+    kinds = await kinds_for(client)
+    assert kinds.count("pickup_leave_now") == 1
+    leave = next(n for n in (await client.get("/api/notifications", params={"user_id": "user_alex"})).json()
+                 if n["kind"] == "pickup_leave_now")
+    assert leave["title"] == "Time to head out" and leave["urgent"]
+
+
+async def test_moving_closer_and_switching_mode_replans(client):
+    order = (await client.post("/api/orders", json={**ORDER, "fulfillment": "pickup", **NEAR_PIZZA})).json()
+    oid = order["id"]
+    walk = (await client.post(f"/api/orders/{oid}/pickup-plan", json={"mode": "walking"})).json()
+    assert walk["pickup_mode"] == "walking" and walk["pickup"]["mode"] == "walking"
+    assert walk["pickup"]["leave_at"] < order["pickup"]["leave_at"]  # walking is slower
+    # Location persisted: a plan refresh without coordinates keeps using it.
+    again = (await client.post(f"/api/orders/{oid}/pickup-plan", json={})).json()
+    assert again["route"]["distance_km"] == walk["route"]["distance_km"]
+
+
+async def test_pickup_validation_and_courier_load(client):
+    half = {**ORDER, "fulfillment": "pickup", "pickup_lat": 25.77}
+    assert (await client.post("/api/orders", json=half)).status_code == 422
+    delivery_oid = (await client.post("/api/orders", json=ORDER)).json()["id"]
+    assert (await client.post(f"/api/orders/{delivery_oid}/pickup-plan", json={})).status_code == 409
+    assert (await client.post(f"/api/orders/{delivery_oid}/collect")).status_code == 409
+
+    svc = app.state.orders
+    before = svc.courier_load()
+    await client.post("/api/orders", json={**ORDER, "fulfillment": "pickup", **NEAR_PIZZA})
+    assert svc.courier_load() == before  # pickups don't use couriers

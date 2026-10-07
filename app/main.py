@@ -14,12 +14,13 @@ from pydantic import BaseModel
 
 from app.data import COURIERS, RESTAURANTS, USERS
 from app.maps import LatLng, RouteProvider, get_provider
-from app.models import CLOSED, Channel, CreateOrderRequest, NotificationPreferences
+from app.models import CLOSED, Channel, CreateOrderRequest, Fulfillment, NotificationPreferences, TravelMode
 from app.notifications.channels import SimulatedChannel, WebSocketChannel
 from app.notifications.events import EventBus
 from app.notifications.service import NotificationService
 from app.orders import OrderService
 from app.prediction.eta import EtaPredictor
+from app.prediction.ready import ReadyTimePredictor
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -36,6 +37,8 @@ def build_services(
     """Wire everything together. Factored out so tests can build a fresh set."""
     predictor = EtaPredictor()
     predictor.load_or_train()
+    ready = ReadyTimePredictor()
+    ready.load_or_train()
 
     bus = EventBus()
     ws_channel = WebSocketChannel()
@@ -48,7 +51,7 @@ def build_services(
     notifications = NotificationService(bus, channels, USERS, RESTAURANTS)
     orders = OrderService(
         bus, predictor, routes or get_provider(), USERS, RESTAURANTS, COURIERS,
-        stage_seconds=stage_seconds, seed=seed,
+        ready_predictor=ready, stage_seconds=stage_seconds, seed=seed,
     )
     return predictor, bus, ws_channel, notifications, orders
 
@@ -112,6 +115,8 @@ async def create_order(req: CreateOrderRequest):
         raise HTTPException(404, "restaurant not found")
     if not req.lines:
         raise HTTPException(422, "order has no items")
+    if (req.pickup_lat is None) != (req.pickup_lng is None):
+        raise HTTPException(422, "send both pickup_lat and pickup_lng, or neither")
     try:
         return await app.state.orders.create(req)
     except ValueError as exc:
@@ -153,6 +158,32 @@ async def advance_order(order_id: str):
     return await app.state.orders.advance(order_id)
 
 
+@app.post("/api/orders/{order_id}/collect")
+async def collect_order(order_id: str):
+    """Pickup: the customer has the food."""
+    _order_or_404(order_id)
+    try:
+        return await app.state.orders.collect(order_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+
+class PickupPlanRequest(BaseModel):
+    lat: float | None = None
+    lng: float | None = None
+    mode: TravelMode | None = None
+
+
+@app.post("/api/orders/{order_id}/pickup-plan")
+async def refresh_pickup_plan(order_id: str, req: PickupPlanRequest):
+    """Re-plan when to leave from the customer's current location. The app
+    calls this as the phone moves; it fires "time to head out" when due."""
+    order = _order_or_404(order_id)
+    if not order.is_pickup:
+        raise HTTPException(409, "not a pickup order")
+    return await app.state.orders.refresh_pickup_plan(order, lat=req.lat, lng=req.lng, mode=req.mode)
+
+
 @app.post("/api/orders/{order_id}/cancel")
 async def cancel_order(order_id: str):
     _order_or_404(order_id)
@@ -166,6 +197,8 @@ async def refresh_eta(order_id: str, demand_shock: float = 1.5):
     order = _order_or_404(order_id)
     if order.status in CLOSED:
         raise HTTPException(409, "order is closed")
+    if order.is_pickup:
+        raise HTTPException(409, "pickup orders have no delivery ETA")
     return await app.state.orders.refresh_eta(order, jitter=demand_shock)
 
 
@@ -201,10 +234,32 @@ async def predict_eta(req: PredictRequest):
     return {**pred.model_dump(mode="json"), "route": route.__dict__}
 
 
+class PickupQuoteRequest(BaseModel):
+    user_id: str
+    restaurant_id: str
+    item_count: int = 2
+    lat: float | None = None
+    lng: float | None = None
+    mode: TravelMode = TravelMode.DRIVING
+
+
+@app.post("/api/predict/pickup")
+async def predict_pickup(req: PickupQuoteRequest):
+    """Before ordering: when will it be ready, and when should I leave?"""
+    user, rest = USERS.get(req.user_id), RESTAURANTS.get(req.restaurant_id)
+    if not user or not rest:
+        raise HTTPException(404, "user or restaurant not found")
+    return await app.state.orders.quote_pickup(
+        user, rest, item_count=max(1, req.item_count), lat=req.lat, lng=req.lng, mode=req.mode)
+
+
 @app.get("/api/predict/model")
 async def model_info():
     p = app.state.predictor
-    return {"metrics": p.metrics, "feature_importance": p.feature_importance()}
+    return {
+        "metrics": {**p.metrics, **app.state.orders.ready.metrics},
+        "feature_importance": p.feature_importance(),
+    }
 
 
 # ---- notifications -------------------------------------------------------

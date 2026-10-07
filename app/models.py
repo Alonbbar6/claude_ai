@@ -21,10 +21,22 @@ class OrderStatus(str, Enum):
     PLACED = "placed"
     CONFIRMED = "confirmed"
     PREPARING = "preparing"
+    READY = "ready"  # pickup only: waiting on the counter
     COURIER_DISPATCHED = "courier_dispatched"
     PICKED_UP = "picked_up"
     DELIVERED = "delivered"
+    COLLECTED = "collected"  # pickup only: customer has the food
     CANCELLED = "cancelled"
+
+
+class Fulfillment(str, Enum):
+    DELIVERY = "delivery"
+    PICKUP = "pickup"
+
+
+class TravelMode(str, Enum):
+    DRIVING = "driving"
+    WALKING = "walking"
 
 
 # Order of the happy-path lifecycle. The simulator walks orders through it.
@@ -37,7 +49,15 @@ LIFECYCLE = [
     OrderStatus.DELIVERED,
 ]
 
-CLOSED = {OrderStatus.DELIVERED, OrderStatus.CANCELLED}
+PICKUP_LIFECYCLE = [
+    OrderStatus.PLACED,
+    OrderStatus.CONFIRMED,
+    OrderStatus.PREPARING,
+    OrderStatus.READY,
+    OrderStatus.COLLECTED,
+]
+
+CLOSED = {OrderStatus.DELIVERED, OrderStatus.COLLECTED, OrderStatus.CANCELLED}
 
 
 class MenuItem(BaseModel):
@@ -103,6 +123,12 @@ class CreateOrderRequest(BaseModel):
     lines: list[OrderLine]
     # Simulated context; a real app would pull these from live services.
     raining: bool = False
+    fulfillment: Fulfillment = Fulfillment.DELIVERY
+    # Pickup only: where the customer is now (phone GPS) and how they'll travel.
+    # Falls back to the profile address when omitted.
+    pickup_lat: float | None = None
+    pickup_lng: float | None = None
+    pickup_mode: TravelMode = TravelMode.DRIVING
 
 
 class EtaPrediction(BaseModel):
@@ -140,6 +166,30 @@ class DispatchPlan(BaseModel):
     route_source: str
 
 
+class PickupPlan(BaseModel):
+    """When the customer should leave so they arrive as the food comes out.
+
+    leave_at = target_arrival_at - trip_min, where target_arrival_at is the
+    kitchen model's p75 ready time.
+    """
+
+    decision: str  # wait | leave_now | ready | too_far
+    message: str
+    mode: TravelMode
+    distance_km: float
+    travel_min: float  # route only
+    trip_min: float  # route + parking / walking in
+    route_source: str
+    ready_at: datetime  # most likely (p50), or actual once ready
+    ready_by: datetime  # almost surely ready (p90)
+    target_arrival_at: datetime
+    leave_at: datetime
+    arrive_at: datetime
+    food_wait_min: float  # food sits on the counter this long
+    your_wait_min: float  # customer waits at the counter this long
+    computed_at: datetime
+
+
 class Order(BaseModel):
     id: str = Field(default_factory=lambda: new_id("ord"))
     user_id: str
@@ -154,6 +204,20 @@ class Order(BaseModel):
     current_eta: EtaPrediction | None = None
     dispatch: DispatchPlan | None = None
     history: list[dict] = Field(default_factory=list)
+    # Pickup orders
+    fulfillment: Fulfillment = Fulfillment.DELIVERY
+    pickup_lat: float | None = None
+    pickup_lng: float | None = None
+    pickup_mode: TravelMode = TravelMode.DRIVING
+    pickup: PickupPlan | None = None
+    ready_at: datetime | None = None  # actual time the kitchen finished
+
+    @property
+    def is_pickup(self) -> bool:
+        return self.fulfillment == Fulfillment.PICKUP
+
+    def lifecycle(self) -> list[OrderStatus]:
+        return PICKUP_LIFECYCLE if self.is_pickup else LIFECYCLE
 
     def item_count(self) -> int:
         return sum(line.quantity for line in self.lines)

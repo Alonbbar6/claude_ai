@@ -24,8 +24,8 @@ log = logging.getLogger(__name__)
 DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json"
 
 # Fallback assumptions when Google is unavailable.
-CITY_SPEED_KMH = 19.0
-ROAD_FACTOR = 1.3  # straight-line -> road distance
+SPEED_KMH = {"driving": 19.0, "walking": 4.8}
+ROAD_FACTOR = {"driving": 1.3, "walking": 1.2}  # straight-line -> route distance
 
 
 @dataclass(frozen=True)
@@ -45,16 +45,17 @@ class RouteEstimate:
 
 
 class RouteProvider:
-    async def route(self, origin: LatLng, dest: LatLng) -> RouteEstimate:
+    async def route(self, origin: LatLng, dest: LatLng, mode: str = "driving") -> RouteEstimate:
+        """``mode`` is "driving" or "walking"."""
         raise NotImplementedError
 
 
 class HaversineProvider(RouteProvider):
-    async def route(self, origin: LatLng, dest: LatLng) -> RouteEstimate:
-        km = haversine_km(origin.lat, origin.lng, dest.lat, dest.lng) * ROAD_FACTOR
+    async def route(self, origin: LatLng, dest: LatLng, mode: str = "driving") -> RouteEstimate:
+        km = haversine_km(origin.lat, origin.lng, dest.lat, dest.lng) * ROAD_FACTOR[mode]
         return RouteEstimate(
             distance_km=round(km, 2),
-            duration_min=round(km / CITY_SPEED_KMH * 60, 1),
+            duration_min=round(km / SPEED_KMH[mode] * 60, 1),
             source="haversine",
         )
 
@@ -78,26 +79,26 @@ class GoogleMapsProvider(RouteProvider):
         self.fallback = fallback or HaversineProvider()
         self._cache: dict[tuple[str, str], tuple[float, RouteEstimate]] = {}
 
-    async def route(self, origin: LatLng, dest: LatLng) -> RouteEstimate:
-        key = (str(origin), str(dest))
+    async def route(self, origin: LatLng, dest: LatLng, mode: str = "driving") -> RouteEstimate:
+        key = (str(origin), str(dest), mode)
         hit = self._cache.get(key)
         if hit and time.monotonic() - hit[0] < self.cache_ttl:
             return hit[1]
         try:
-            est = await self._fetch(origin, dest)
+            est = await self._fetch(origin, dest, mode)
         except Exception as exc:  # network, quota, bad key, malformed body...
             log.warning("Google Distance Matrix failed (%s); using fallback", exc)
-            return await self.fallback.route(origin, dest)
+            return await self.fallback.route(origin, dest, mode)
         self._cache[key] = (time.monotonic(), est)
         return est
 
-    async def _fetch(self, origin: LatLng, dest: LatLng) -> RouteEstimate:
+    async def _fetch(self, origin: LatLng, dest: LatLng, mode: str) -> RouteEstimate:
         resp = await self.client.get(
             DISTANCE_MATRIX_URL,
             params={
                 "origins": str(origin),
                 "destinations": str(dest),
-                "mode": "driving",
+                "mode": mode,
                 "departure_time": "now",
                 "key": self.api_key,
             },

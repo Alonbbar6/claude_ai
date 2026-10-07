@@ -22,6 +22,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: Connects to your Mini Eats development server.
+        NSLocationWhenInUseUsageDescription: For pickup orders, your distance to the restaurant tells us when you should leave so you arrive as your food is ready.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.minieats.app

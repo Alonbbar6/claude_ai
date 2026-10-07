@@ -44,6 +44,8 @@ final class AppStore {
     var selectedTab: Tab = .home
     var ordersPath: [String] = []
 
+    let location = LocationService()
+
     private var socketTask: URLSessionWebSocketTask?
     private var socketGeneration = 0
 
@@ -141,6 +143,47 @@ final class AppStore {
             userId: userId, restaurantId: restaurantId, itemCount: max(1, itemCount), raining: raining))
     }
 
+    // MARK: - Pickup prediction
+
+    /// Before ordering: when will it be ready and when should I leave?
+    func pickupQuote(restaurantId: String, itemCount: Int, mode: TravelMode) async throws -> PickupPlan {
+        guard let userId = currentUserId else { throw APIError(message: "No user selected") }
+        let c = location.coordinate
+        return try await api.post("/api/predict/pickup", body: PickupQuoteBody(
+            userId: userId, restaurantId: restaurantId, itemCount: max(1, itemCount),
+            lat: c?.latitude, lng: c?.longitude, mode: mode))
+    }
+
+    /// Re-plan from where the phone is now. The backend fires "Time to head
+    /// out" when it's time; we also schedule a local reminder for leave time.
+    func refreshPickupPlan(_ orderId: String, mode: TravelMode? = nil) async {
+        let c = location.coordinate
+        let body = PickupPlanBody(lat: c?.latitude, lng: c?.longitude, mode: mode)
+        guard let order: Order = try? await api.post("/api/orders/\(orderId)/pickup-plan", body: body) else { return }
+        upsert(order)
+        scheduleLeaveReminder(for: order)
+    }
+
+    private static func leaveReminderId(_ orderId: String) -> String { "leave-\(orderId)" }
+
+    /// A local notification at leave time works even if the app is suspended
+    /// and the WebSocket is down. Rescheduled on every re-plan.
+    private func scheduleLeaveReminder(for order: Order) {
+        let center = UNUserNotificationCenter.current()
+        let id = Self.leaveReminderId(order.id)
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        guard let plan = order.pickup, plan.shouldWait, !order.status.isClosed else { return }
+        let seconds = plan.leaveAt.timeIntervalSinceNow
+        guard seconds > 1 else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Time to head out"
+        content.body = "Leave now for \(restaurant(order.restaurantId)?.name ?? "the restaurant") so you arrive as your food is ready."
+        content.sound = .default
+        center.add(UNNotificationRequest(
+            identifier: id, content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)))
+    }
+
     // MARK: - Cart
 
     func quantity(of itemId: String, in restaurantId: String) -> Int {
@@ -179,19 +222,25 @@ final class AppStore {
     // MARK: - Orders
 
     @discardableResult
-    func placeOrder(raining: Bool) async throws -> Order {
+    func placeOrder(raining: Bool, fulfillment: Fulfillment = .delivery, mode: TravelMode = .driving) async throws -> Order {
         guard let userId = currentUserId, let restaurantId = cartRestaurantId else {
             throw APIError(message: "Your cart is empty")
         }
+        let c = fulfillment == .pickup ? location.coordinate : nil
         let body = CreateOrderBody(
             userId: userId,
             restaurantId: restaurantId,
             lines: cartLines.map { OrderLine(itemId: $0.item.id, quantity: $0.quantity) },
-            raining: raining)
+            raining: raining,
+            fulfillment: fulfillment,
+            pickupLat: c?.latitude,
+            pickupLng: c?.longitude,
+            pickupMode: mode)
         let order: Order = try await api.post("/api/orders", body: body)
         // Ask in context, like real delivery apps; iOS only prompts once.
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
         upsert(order)
+        scheduleLeaveReminder(for: order)
         cart = [:]
         cartRestaurantId = nil
         showCart = false
@@ -200,11 +249,12 @@ final class AppStore {
         return order
     }
 
-    /// Demo controls: "advance", "cancel", "refresh-eta" (simulated demand spike).
+    /// "advance", "cancel", "collect", "refresh-eta" (simulated demand spike).
     func perform(_ action: String, on orderId: String) async {
         let query = action == "refresh-eta" ? ["demand_shock": "4"] : [:]
         if let order: Order = try? await api.post("/api/orders/\(orderId)/\(action)", query: query) {
             upsert(order)
+            scheduleLeaveReminder(for: order)  // clears it once ready / collected / cancelled
         }
         await refreshNotifications()
     }
@@ -285,7 +335,14 @@ final class AppStore {
         content.title = n.title
         content.body = n.body
         content.sound = n.urgent ? .default : nil
+        // A server "leave now" replaces the locally scheduled reminder rather
+        // than showing a second one.
+        var id = n.id
+        if n.kind == "pickup_leave_now", let orderId = n.orderId {
+            id = Self.leaveReminderId(orderId)
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
+        }
         UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: n.id, content: content, trigger: nil))
+            UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 }

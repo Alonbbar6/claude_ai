@@ -23,7 +23,9 @@ final class DecodingTests: XCTestCase {
             "expected_pickup_at": "2026-10-07T04:45:34Z", "expected_delivery_at": "2026-10-07T04:56:46Z",
             "pickup_delay_min": 0.0, "route_source": "haversine"
           },
-          "history": [{"status": "placed"}]
+          "history": [{"status": "placed"}],
+          "fulfillment": "delivery", "pickup_lat": null, "pickup_lng": null,
+          "pickup_mode": "driving", "pickup": null, "ready_at": null
         }
         """
         let order = try JSONDecoder.api.decode(Order.self, from: Data(json.utf8))
@@ -34,6 +36,52 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(order.quotedEta?.etaMinutes, 41.9)
         XCTAssertEqual(order.dispatch?.courierName, "Dev")
         XCTAssertEqual(order.createdAt, order.updatedAt)
+    }
+
+    func testDecodesPickupOrderWithPlan() throws {
+        let json = """
+        {
+          "id": "ord_2", "user_id": "user_sam", "restaurant_id": "rest_burger",
+          "lines": [{"item_id": "burger_1", "quantity": 1}], "status": "ready",
+          "created_at": "2026-10-07T04:00:00.123456Z", "updated_at": "2026-10-07T04:15:00Z",
+          "route": {"distance_km": 0.4, "duration_min": 5.2, "source": "haversine"},
+          "raining": false, "quoted_eta": null, "current_eta": null, "dispatch": null,
+          "history": [], "fulfillment": "pickup", "pickup_lat": 25.793, "pickup_lng": -80.133,
+          "pickup_mode": "walking", "ready_at": "2026-10-07T04:15:00Z",
+          "pickup": {
+            "decision": "ready", "message": "Your food is ready.", "mode": "walking",
+            "distance_km": 0.4, "travel_min": 5.2, "trip_min": 5.7, "route_source": "haversine",
+            "ready_at": "2026-10-07T04:15:00Z", "ready_by": "2026-10-07T04:15:00Z",
+            "target_arrival_at": "2026-10-07T04:15:00Z", "leave_at": "2026-10-07T04:15:00Z",
+            "arrive_at": "2026-10-07T04:20:42Z", "food_wait_min": 5.7, "your_wait_min": 0.0,
+            "computed_at": "2026-10-07T04:15:00.000001+00:00"
+          }
+        }
+        """
+        let order = try JSONDecoder.api.decode(Order.self, from: Data(json.utf8))
+        XCTAssertTrue(order.isPickup)
+        XCTAssertEqual(order.status, .ready)
+        XCTAssertEqual(order.timeline, OrderStatus.pickupTimeline)
+        XCTAssertEqual(order.pickupMode, .walking)
+        XCTAssertEqual(order.pickup?.decision, "ready")
+        XCTAssertEqual(order.pickup?.tripMin, 5.7)
+        XCTAssertFalse(order.pickup!.shouldWait)
+        XCTAssertNotNil(order.readyAt)
+    }
+
+    func testPickupBodyOmitsMissingLocation() throws {
+        let body = PickupPlanBody(lat: nil, lng: nil, mode: .walking)
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder.api.encode(body)) as! [String: Any]
+        XCTAssertEqual(object["mode"] as? String, "walking")
+        XCTAssertNil(object["lat"])
+
+        var create = CreateOrderBody(userId: "u", restaurantId: "r", lines: [], raining: false)
+        create.fulfillment = .pickup
+        create.pickupLat = 1.5
+        let c = try JSONSerialization.jsonObject(with: JSONEncoder.api.encode(create)) as! [String: Any]
+        XCTAssertEqual(c["fulfillment"] as? String, "pickup")
+        XCTAssertEqual(c["pickup_lat"] as? Double, 1.5)
+        XCTAssertEqual(c["pickup_mode"] as? String, "driving")
     }
 
     func testDecodesWebSocketNotificationWithoutDeliveries() throws {

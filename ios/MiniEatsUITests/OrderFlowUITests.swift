@@ -60,6 +60,67 @@ final class OrderFlowUITests: XCTestCase {
         shot("7_alerts")
     }
 
+    /// Pickup: the app plans when to leave from the phone's location.
+    /// Run with the simulator located near Grill House (see ios/README.md).
+    func testPickupTellsYouWhenToLeave() throws {
+        let grill = app.staticTexts["Grill House"]
+        XCTAssertTrue(grill.waitForExistence(timeout: 15), "restaurants did not load — is the backend running?")
+        grill.tap()
+        let addBurger = app.buttons["Add Classic Burger"]
+        XCTAssertTrue(addBurger.waitForExistence(timeout: 5))
+        addBurger.tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View cart'")).firstMatch.tap()
+
+        app.buttons["Pickup"].tap()
+        allowLocationIfAsked()
+        XCTAssertTrue(app.staticTexts["Leave at"].waitForExistence(timeout: 10), "no pickup plan in cart")
+        sleep(1)
+        shot("p1_cart_pickup")
+
+        app.buttons["Place pickup order"].tap()
+        dismissNotificationPrompt()
+
+        // Close by: a live "Leave in m:ss" countdown, not "Leave now".
+        let countdown = app.staticTexts["leave-countdown"]
+        XCTAssertTrue(countdown.waitForExistence(timeout: 10), "no leave countdown")
+        XCTAssertTrue(app.buttons["Get directions"].exists)
+        sleep(1)
+        shot("p2_leave_countdown")
+
+        // Walking is slower, so the plan should tell you to leave sooner.
+        let before = countdown.label
+        app.buttons["Walk"].tap()
+        let changed = NSPredicate(format: "label != %@", before)
+        expectation(for: changed, evaluatedWith: countdown)
+        waitForExpectations(timeout: 10)
+        shot("p3_walking")
+
+        // Skip the kitchen ahead (demo control) until the food is ready.
+        let ready = app.staticTexts["ready-header"]
+        for _ in 0..<4 where !ready.exists {
+            app.swipeUp()
+            app.buttons["Advance"].tap()
+            app.swipeDown()
+            _ = ready.waitForExistence(timeout: 3)
+        }
+        XCTAssertTrue(ready.waitForExistence(timeout: 5), "food never became ready")
+        shot("p4_ready")
+
+        app.buttons["I've picked it up"].tap()
+        XCTAssertTrue(app.staticTexts["collected-header"].waitForExistence(timeout: 5))
+        shot("p5_collected")
+
+        app.tabBars.buttons["Alerts"].tap()
+        XCTAssertTrue(app.staticTexts["Ready for pickup"].firstMatch.waitForExistence(timeout: 5))
+        shot("p6_alerts")
+    }
+
+    private func allowLocationIfAsked() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons["Allow While Using App"]
+        if allow.waitForExistence(timeout: 3) { allow.tap() }
+    }
+
     private func dismissNotificationPrompt() {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = springboard.buttons["Allow"]

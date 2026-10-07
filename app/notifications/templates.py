@@ -42,6 +42,33 @@ TEMPLATES: dict[str, tuple[str, str, bool]] = {
         "Your order from {restaurant} was cancelled. You will not be charged.",
         True,
     ),
+    # Pickup orders use "pickup_<kind>" when present, else the shared template.
+    "pickup_placed": (
+        "Order received",
+        "Thanks {user}! {restaurant} has your order. It should be ready in about "
+        "{ready_min} min. We'll tell you when to leave.",
+        False,
+    ),
+    "pickup_preparing": (
+        "Being prepared",
+        "{restaurant} is cooking your order. Ready in about {ready_min} min.",
+        False,
+    ),
+    OrderStatus.READY.value: (
+        "Ready for pickup",
+        "Your order is ready at {restaurant}. Head over now, it's a {trip_min} min {verb}.",
+        True,
+    ),
+    OrderStatus.COLLECTED.value: (
+        "Enjoy your meal",
+        "Thanks for picking up from {restaurant}!",
+        False,
+    ),
+    "pickup_leave_now": (
+        "Time to head out",
+        "{plan_message}",
+        True,
+    ),
     "delayed": (
         "Running late",
         "Sorry, your order from {restaurant} is running about {delay_min} min "

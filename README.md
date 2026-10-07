@@ -67,6 +67,24 @@ advance → preparing / courier_dispatched / picked_up / delivered
 
 `GET /api/predict/model` reports held-out MAE / AUC and feature importances.
 
+### Pickup timing (`app/prediction/ready.py`, `app/pickup.py`)
+
+For pickup orders the app tells you **when to leave** so you get there as the food
+comes out: no waiting at the counter, no cold food.
+
+- **Kitchen ready-time model**: three quantile gradient-boosting models give a range
+  for when the food is ready: p50 (most likely), p75 (planned against), p90 (almost
+  surely ready). Inputs: restaurant prep time, items, kitchen backlog, hour/rush/weekend.
+  Calibrated on held-out data (p75 covers ~74% of orders, p90 ~90%). Delivery dispatch
+  uses the same model's p50 to time couriers.
+- **Planner** (pure function): `leave_at = p75 ready time − (travel time + parking/walk-in)`,
+  with travel from the customer's live GPS location by car or on foot (Google Distance Matrix
+  `mode=driving|walking`). It returns `wait` (leave in N min), `leave_now`, `ready`, or
+  `too_far`, plus how long the food would sit (`food_wait_min`) or you would wait.
+- **Live re-planning**: the app sends location as you move (`POST /api/orders/{id}/pickup-plan`),
+  and the server re-plans every 30 s while the kitchen cooks. When it's time, it sends a
+  **"Time to head out"** notification once (deduplicated), even if the app is closed.
+
 ### Routing (`app/maps.py`)
 
 `GoogleMapsProvider` calls the Distance Matrix API with `departure_time=now`, caches
@@ -90,11 +108,14 @@ source)`.
 | GET | `/api/restaurants`, `/api/users`, `/api/couriers` | seed data |
 | PUT | `/api/users/{id}/preferences` | channels & quiet hours |
 | POST | `/api/predict/eta` | quote before ordering (includes the Google route) |
+| POST | `/api/predict/pickup` | pickup quote: ready time range, trip, when to leave |
 | GET | `/api/predict/model` | model metrics & feature importance |
 | POST | `/api/orders` | place an order (routes, quotes, notifies, starts simulation) |
 | GET | `/api/orders?user_id=` · `/api/orders/{id}` | list / detail |
 | GET | `/api/orders/{id}/dispatch` | courier dispatch plan (after confirmation) |
 | POST | `/api/orders/{id}/advance` · `/cancel` · `/refresh-eta?demand_shock=` | drive the lifecycle manually |
+| POST | `/api/orders/{id}/pickup-plan` | re-plan pickup from `{lat, lng, mode}` |
+| POST | `/api/orders/{id}/collect` | pickup: customer has the food |
 | GET | `/api/notifications?user_id=` | notifications with per-channel delivery records |
 | POST | `/api/notifications/flush-deferred` | send what quiet hours held back |
 | WS | `/ws/{user_id}` | live notification stream |

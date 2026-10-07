@@ -27,6 +27,8 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to your Mini Eats development server.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>For pickup orders, your distance to the restaurant tells us when you should leave so you arrive as your food is ready.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

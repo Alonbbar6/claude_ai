@@ -1,11 +1,16 @@
-"""Order service: routes orders, quotes ETAs, plans courier dispatch, and
-simulates the lifecycle.
+"""Order service: routes orders, quotes ETAs, plans courier dispatch or
+customer pickup, and simulates the lifecycle.
 
 Routing (distance + traffic-aware travel time) comes from the maps provider
-(Google Distance Matrix when a key is configured). The ETA model uses that
-travel time as a feature. When the kitchen confirms, we build a dispatch
-plan so the courier reaches the restaurant as the food comes out instead
-of idling there or leaving it to sit.
+(Google Distance Matrix when a key is configured).
+
+Delivery: the ETA model uses the restaurant -> customer travel time as a
+feature. When the kitchen confirms, we build a dispatch plan so the courier
+reaches the restaurant as the food comes out.
+
+Pickup: the kitchen ready-time model predicts when the food comes out; the
+pickup planner tells the customer when to leave from where they are now, and
+fires a "time to head out" notification at that moment.
 """
 
 from __future__ import annotations
@@ -15,36 +20,46 @@ import logging
 import random
 from datetime import datetime, timedelta, timezone
 
-from app.maps import LatLng, RouteProvider
+from app.maps import LatLng, RouteEstimate, RouteProvider
 from app.models import (
     CLOSED,
-    LIFECYCLE,
     Courier,
     CreateOrderRequest,
     DispatchPlan,
+    Fulfillment,
     Order,
     OrderStatus,
+    PickupPlan,
     Restaurant,
     Route,
+    TravelMode,
     User,
 )
 from app.notifications.events import (
     ORDER_DELAYED,
     ORDER_ETA_UPDATED,
+    ORDER_PICKUP_LEAVE,
     ORDER_STATUS_CHANGED,
     Event,
     EventBus,
 )
+from app.pickup import plan_pickup
 from app.prediction.eta import EtaPredictor
+from app.prediction.ready import ReadyTimePredictor
 
 log = logging.getLogger(__name__)
 
 DELAY_ALERT_MIN = 5.0
 HANDOFF_MIN = 1.5  # bagging/handoff at the restaurant and at the door
+KITCHEN_STATUSES = (OrderStatus.PLACED, OrderStatus.CONFIRMED, OrderStatus.PREPARING)
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def minutes_since(t: datetime) -> float:
+    return (utcnow() - t).total_seconds() / 60
 
 
 class OrderService:
@@ -57,7 +72,9 @@ class OrderService:
         restaurants: dict[str, Restaurant],
         couriers: dict[str, Courier],
         *,
+        ready_predictor: ReadyTimePredictor | None = None,
         stage_seconds: float = 4.0,
+        plan_refresh_seconds: float = 30.0,
         seed: int | None = None,
     ) -> None:
         self.bus = bus
@@ -66,35 +83,53 @@ class OrderService:
         self.users = users
         self.restaurants = restaurants
         self.couriers = couriers
+        if ready_predictor is None:
+            ready_predictor = ReadyTimePredictor()
+            ready_predictor.load_or_train()
+        self.ready = ready_predictor
         self.stage_seconds = stage_seconds
+        self.plan_refresh_seconds = plan_refresh_seconds
         self.orders: dict[str, Order] = {}
         self._rng = random.Random(seed)
         self._tasks: set[asyncio.Task] = set()
+        # Simulated "true" kitchen finish times for pickup orders (hidden
+        # from the models, like reality).
+        self._actual_ready: dict[str, datetime] = {}
 
     # ---- live context ------------------------------------------------
 
     def courier_load(self) -> float:
-        """Active orders per courier."""
-        active = sum(1 for o in self.orders.values() if o.status not in CLOSED)
+        """Active delivery orders per courier."""
+        active = sum(
+            1 for o in self.orders.values()
+            if o.status not in CLOSED and o.fulfillment == Fulfillment.DELIVERY
+        )
         return active / max(len(self.couriers), 1)
 
     def restaurant_busy(self, restaurant_id: str) -> float:
         return float(sum(
             1 for o in self.orders.values()
-            if o.restaurant_id == restaurant_id
-            and o.status in (OrderStatus.PLACED, OrderStatus.CONFIRMED, OrderStatus.PREPARING)
+            if o.restaurant_id == restaurant_id and o.status in KITCHEN_STATUSES
         ))
 
-    def kitchen_minutes(self, order: Order) -> float:
-        """How long until the food is ready, from the kitchen's point of view."""
+    def predict_ready(self, order: Order):
         r = self.restaurants[order.restaurant_id]
-        return r.avg_prep_min + 1.2 * order.item_count() + 1.8 * self.restaurant_busy(r.id)
+        return self.ready.predict(
+            prep_time_min=r.avg_prep_min,
+            item_count=order.item_count(),
+            restaurant_busy=self.restaurant_busy(r.id),
+            when=utcnow(),
+            elapsed_min=minutes_since(order.created_at),
+        )
+
+    def kitchen_minutes(self, order: Order) -> float:
+        """Most likely minutes until the food is ready (model p50)."""
+        return self.predict_ready(order).p50
 
     def _predict(self, order: Order, jitter: float = 0.0):
         now = utcnow()
-        elapsed = (now - order.created_at).total_seconds() / 60
         # Simulated world is fast; scale elapsed so the model sees "minutes".
-        elapsed_sim = elapsed * (60 / max(self.stage_seconds, 0.01))
+        elapsed_sim = minutes_since(order.created_at) * (60 / max(self.stage_seconds, 0.01))
         return self.predictor.predict(
             distance_km=order.route.distance_km,
             travel_time_min=order.route.duration_min,
@@ -118,20 +153,41 @@ class OrderService:
             if line.item_id not in known:
                 raise ValueError(f"unknown item {line.item_id} for {restaurant.id}")
 
-        est = await self.routes.route(
-            LatLng(restaurant.lat, restaurant.lng), LatLng(user.lat, user.lng)
-        )
+        pickup = req.fulfillment == Fulfillment.PICKUP
+        if pickup:
+            origin = self._pickup_origin(user, req.pickup_lat, req.pickup_lng)
+            est = await self.routes.route(
+                origin, LatLng(restaurant.lat, restaurant.lng), mode=req.pickup_mode.value)
+        else:
+            est = await self.routes.route(
+                LatLng(restaurant.lat, restaurant.lng), LatLng(user.lat, user.lng))
+
         order = Order(
             user_id=user.id,
             restaurant_id=restaurant.id,
             lines=req.lines,
             raining=req.raining,
-            route=Route(distance_km=est.distance_km, duration_min=est.duration_min, source=est.source),
+            route=_route(est),
+            fulfillment=req.fulfillment,
+            pickup_lat=req.pickup_lat if pickup else None,
+            pickup_lng=req.pickup_lng if pickup else None,
+            pickup_mode=req.pickup_mode,
         )
         self.orders[order.id] = order
-        order.quoted_eta = order.current_eta = self._predict(order)
+
+        if pickup:
+            est_ready = self.predict_ready(order)
+            # The kitchen's real finish time: near the median, with noise.
+            actual = max(3.0, est_ready.p50 * self._rng.lognormvariate(0, 0.12))
+            self._actual_ready[order.id] = order.created_at + timedelta(minutes=actual)
+            order.pickup = self._compute_pickup_plan(order, est)
+        else:
+            order.quoted_eta = order.current_eta = self._predict(order)
+
         order.history.append(self._entry(order))
         await self.bus.publish(Event(ORDER_STATUS_CHANGED, {"order": order}))
+        if pickup:
+            await self._maybe_signal_leave(order)
 
         task = asyncio.create_task(self._run_lifecycle(order.id))
         self._tasks.add(task)
@@ -142,23 +198,38 @@ class OrderService:
         order = self.orders[order_id]
         if order.status in CLOSED:
             return order
-        order.status = LIFECYCLE[LIFECYCLE.index(order.status) + 1]
+        lifecycle = order.lifecycle()
+        order.status = lifecycle[lifecycle.index(order.status) + 1]
         order.updated_at = utcnow()
 
-        if order.status == OrderStatus.CONFIRMED:
-            await self.plan_dispatch(order)
-        elif order.status == OrderStatus.COURIER_DISPATCHED and order.dispatch:
-            self.couriers[order.dispatch.courier_id].active_order_id = order.id
-        elif order.status == OrderStatus.DELIVERED:
-            self._release_courier(order)
-            order.current_eta = None
-
-        if order.status != OrderStatus.DELIVERED:
-            await self.refresh_eta(order)
+        if order.is_pickup:
+            if order.status == OrderStatus.READY:
+                order.ready_at = order.updated_at
+            if order.status != OrderStatus.COLLECTED:
+                await self.refresh_pickup_plan(order, signal=False)
+        else:
+            if order.status == OrderStatus.CONFIRMED:
+                await self.plan_dispatch(order)
+            elif order.status == OrderStatus.COURIER_DISPATCHED and order.dispatch:
+                self.couriers[order.dispatch.courier_id].active_order_id = order.id
+            elif order.status == OrderStatus.DELIVERED:
+                self._release_courier(order)
+                order.current_eta = None
+            if order.status != OrderStatus.DELIVERED:
+                await self.refresh_eta(order)
 
         order.history.append(self._entry(order))
         await self.bus.publish(Event(ORDER_STATUS_CHANGED, {"order": order}))
+        if order.is_pickup:
+            await self._maybe_signal_leave(order)
         return order
+
+    async def collect(self, order_id: str) -> Order:
+        """Customer confirms they have the food."""
+        order = self.orders[order_id]
+        if not order.is_pickup or order.status != OrderStatus.READY:
+            raise ValueError("only pickup orders that are ready can be collected")
+        return await self.advance(order_id)
 
     async def cancel(self, order_id: str) -> Order:
         order = self.orders[order_id]
@@ -171,6 +242,74 @@ class OrderService:
         order.history.append(self._entry(order))
         await self.bus.publish(Event(ORDER_STATUS_CHANGED, {"order": order}))
         return order
+
+    # ---- pickup --------------------------------------------------------
+
+    def _pickup_origin(self, user: User, lat: float | None, lng: float | None) -> LatLng:
+        """Customer's live location when the app sent one, else their profile address."""
+        if lat is not None and lng is not None:
+            return LatLng(lat, lng)
+        return LatLng(user.lat, user.lng)
+
+    def _compute_pickup_plan(self, order: Order, route: RouteEstimate) -> PickupPlan:
+        return plan_pickup(
+            now=utcnow(),
+            route=route,
+            mode=order.pickup_mode,
+            ready=None if order.ready_at else self.predict_ready(order),
+            actual_ready_at=order.ready_at,
+        )
+
+    async def refresh_pickup_plan(
+        self,
+        order: Order,
+        *,
+        lat: float | None = None,
+        lng: float | None = None,
+        mode: TravelMode | None = None,
+        signal: bool = True,
+    ) -> Order:
+        """Re-plan from the customer's latest location / travel mode."""
+        if not order.is_pickup:
+            raise ValueError("not a pickup order")
+        if lat is not None and lng is not None:
+            order.pickup_lat, order.pickup_lng = lat, lng
+        if mode is not None:
+            order.pickup_mode = mode
+        if order.status in CLOSED:
+            return order
+        restaurant = self.restaurants[order.restaurant_id]
+        origin = self._pickup_origin(self.users[order.user_id], order.pickup_lat, order.pickup_lng)
+        est = await self.routes.route(
+            origin, LatLng(restaurant.lat, restaurant.lng), mode=order.pickup_mode.value)
+        order.route = _route(est)
+        order.pickup = self._compute_pickup_plan(order, est)
+        if signal:
+            await self._maybe_signal_leave(order)
+        return order
+
+    async def quote_pickup(
+        self, user: User, restaurant: Restaurant, *, item_count: int,
+        lat: float | None, lng: float | None, mode: TravelMode,
+    ) -> PickupPlan:
+        """Pickup plan before ordering, as shown in the cart."""
+        est = await self.routes.route(
+            self._pickup_origin(user, lat, lng), LatLng(restaurant.lat, restaurant.lng), mode=mode.value)
+        ready = self.ready.predict(
+            prep_time_min=restaurant.avg_prep_min,
+            item_count=item_count,
+            restaurant_busy=self.restaurant_busy(restaurant.id),
+            when=utcnow(),
+        )
+        return plan_pickup(now=utcnow(), route=est, mode=mode, ready=ready)
+
+    async def _maybe_signal_leave(self, order: Order) -> None:
+        # The notification service dedups per order, so this is safe to call
+        # on every re-plan; the customer hears it once.
+        if order.pickup and order.pickup.decision == "leave_now" and order.status in KITCHEN_STATUSES:
+            await self.bus.publish(Event(ORDER_PICKUP_LEAVE, {"order": order}))
+
+    # ---- delivery ------------------------------------------------------
 
     async def plan_dispatch(self, order: Order) -> DispatchPlan | None:
         """Pick a courier and time their dispatch to the food being ready.
@@ -225,6 +364,8 @@ class OrderService:
 
     async def refresh_eta(self, order: Order, *, jitter: float | None = None) -> Order:
         """Re-predict and raise ``order.delayed`` if we slipped past the quote."""
+        if order.is_pickup:
+            raise ValueError("pickup orders have no delivery ETA")
         if jitter is None:
             # Random demand shock so the demo shows late alerts sometimes.
             jitter = max(0.0, self._rng.gauss(0.3, 0.6))
@@ -246,6 +387,9 @@ class OrderService:
 
     async def _run_lifecycle(self, order_id: str) -> None:
         try:
+            if self.orders[order_id].is_pickup:
+                await self._run_pickup(order_id)
+                return
             while self.orders[order_id].status not in CLOSED:
                 await asyncio.sleep(self.stage_seconds)
                 await self.advance(order_id)
@@ -253,6 +397,27 @@ class OrderService:
             pass
         except Exception:
             log.exception("lifecycle failed for %s", order_id)
+
+    async def _run_pickup(self, order_id: str) -> None:
+        """Kitchen accepts and cooks in real time; the customer collects.
+
+        While cooking we re-plan periodically from the customer's last known
+        location so "time to head out" fires on time even if the app is
+        closed. "Advance" in the API skips ahead for demos.
+        """
+        order = self.orders[order_id]
+        while order.status in (OrderStatus.PLACED, OrderStatus.CONFIRMED):
+            await asyncio.sleep(self.stage_seconds)
+            if order.status in (OrderStatus.PLACED, OrderStatus.CONFIRMED):
+                await self.advance(order_id)
+        while order.status == OrderStatus.PREPARING:
+            remaining = (self._actual_ready[order_id] - utcnow()).total_seconds()
+            if remaining <= 0:
+                await self.advance(order_id)  # -> ready
+                break
+            await asyncio.sleep(min(remaining, self.plan_refresh_seconds))
+            if order.status == OrderStatus.PREPARING:
+                await self.refresh_pickup_plan(order)
 
     async def shutdown(self) -> None:
         for t in list(self._tasks):
@@ -274,3 +439,7 @@ class OrderService:
             "eta_minutes": eta.eta_minutes if eta else None,
             "delay_risk": eta.delay_risk if eta else None,
         }
+
+
+def _route(est: RouteEstimate) -> Route:
+    return Route(distance_km=est.distance_km, duration_min=est.duration_min, source=est.source)

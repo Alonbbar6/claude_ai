@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from app.models import (
     Channel,
+    TravelMode,
     DeliveryRecord,
     Notification,
     Order,
@@ -24,6 +25,7 @@ from app.notifications.channels import BaseChannel, ChannelError
 from app.notifications.events import (
     ORDER_DELAYED,
     ORDER_ETA_UPDATED,
+    ORDER_PICKUP_LEAVE,
     ORDER_STATUS_CHANGED,
     Event,
     EventBus,
@@ -71,6 +73,7 @@ class NotificationService:
         bus.subscribe(ORDER_STATUS_CHANGED, self.on_status_changed)
         bus.subscribe(ORDER_ETA_UPDATED, self.on_eta_updated)
         bus.subscribe(ORDER_DELAYED, self.on_delayed)
+        bus.subscribe(ORDER_PICKUP_LEAVE, self.on_pickup_leave)
 
     # ---- event handlers ----------------------------------------------
 
@@ -90,6 +93,9 @@ class NotificationService:
             order, kind="delayed", delay_min=round(event.payload["delay_min"])
         )
 
+    async def on_pickup_leave(self, event: Event) -> None:
+        await self.notify_order(event.payload["order"], kind="pickup_leave_now")
+
     # ---- core --------------------------------------------------------
 
     async def notify_order(self, order: Order, kind: str, **extra) -> Notification | None:
@@ -101,15 +107,23 @@ class NotificationService:
             max(0, round((plan.expected_pickup_at - self.clock_utc()).total_seconds() / 60))
             if plan else "?"
         )
+        pk = order.pickup
         ctx = {
             "user": user.name,
             "restaurant": restaurant.name,
             "eta_min": round(eta.eta_minutes) if eta else "?",
             "courier": plan.courier_name if plan else "Your courier",
             "pickup_min": pickup_min,
+            "ready_min": max(1, round((pk.ready_at - self.clock_utc()).total_seconds() / 60)) if pk else "?",
+            "trip_min": max(1, round(pk.trip_min)) if pk else "?",
+            "verb": "drive" if not pk or pk.mode == TravelMode.DRIVING else "walk",
+            "plan_message": pk.message if pk else "",
             **extra,
         }
-        title, body, urgent = templates.render(kind, **ctx)
+        template = kind
+        if order.is_pickup and f"pickup_{kind}" in templates.TEMPLATES:
+            template = f"pickup_{kind}"
+        title, body, urgent = templates.render(template, **ctx)
         n = Notification(
             user_id=user.id, order_id=order.id, kind=kind, title=title, body=body, urgent=urgent
         )

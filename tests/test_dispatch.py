@@ -19,7 +19,7 @@ class FixedRoutes(RouteProvider):
         self.by_origin = minutes_by_origin
         self.default = default
 
-    async def route(self, origin: LatLng, dest: LatLng) -> RouteEstimate:
+    async def route(self, origin: LatLng, dest: LatLng, mode: str = "driving") -> RouteEstimate:
         m = self.by_origin.get((origin.lat, origin.lng), self.default)
         return RouteEstimate(distance_km=m / 3, duration_min=m, source="fixed")
 

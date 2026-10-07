@@ -44,3 +44,4 @@ class EventBus:
 ORDER_STATUS_CHANGED = "order.status_changed"
 ORDER_ETA_UPDATED = "order.eta_updated"
 ORDER_DELAYED = "order.delayed"
+ORDER_PICKUP_LEAVE = "order.pickup_leave"  # customer should leave for pickup now

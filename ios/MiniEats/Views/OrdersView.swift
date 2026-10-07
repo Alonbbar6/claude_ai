@@ -38,7 +38,13 @@ private struct OrderRow: View {
                     .foregroundStyle(order.status.isClosed ? Color.secondary : Color.brand)
             }
             Spacer()
-            if let eta = order.currentEta, !order.status.isClosed {
+            if order.isPickup, let plan = order.pickup, !order.status.isClosed, order.status != .ready {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Pickup").font(.caption).foregroundStyle(.secondary)
+                    Text(plan.shouldWait ? "Leave \(Format.time(plan.leaveAt))" : "Leave now")
+                        .font(.subheadline.bold())
+                }
+            } else if let eta = order.currentEta, !order.status.isClosed {
                 Text(Format.minutes(eta.etaMinutes)).font(.subheadline.bold())
             }
         }

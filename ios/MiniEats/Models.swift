@@ -78,19 +78,24 @@ enum OrderStatus: String, Codable, CaseIterable {
     case placed
     case confirmed
     case preparing
+    case ready  // pickup: on the counter
     case courierDispatched = "courier_dispatched"
     case pickedUp = "picked_up"
     case delivered
+    case collected  // pickup: customer has it
     case cancelled
 
     /// Happy-path steps shown in the tracking timeline.
     static let timeline: [OrderStatus] = [.placed, .confirmed, .preparing, .courierDispatched, .pickedUp, .delivered]
+    static let pickupTimeline: [OrderStatus] = [.placed, .confirmed, .preparing, .ready, .collected]
 
     var title: String {
         switch self {
         case .placed: "Order placed"
         case .confirmed: "Restaurant confirmed"
         case .preparing: "Preparing your food"
+        case .ready: "Ready for pickup"
+        case .collected: "Picked up"
         case .courierDispatched: "Courier heading to restaurant"
         case .pickedUp: "Picked up, on the way"
         case .delivered: "Delivered"
@@ -103,6 +108,8 @@ enum OrderStatus: String, Codable, CaseIterable {
         case .placed: "checkmark.circle"
         case .confirmed: "storefront"
         case .preparing: "frying.pan"
+        case .ready: "bag.fill"
+        case .collected: "checkmark.seal.fill"
         case .courierDispatched: "bicycle"
         case .pickedUp: "car.fill"
         case .delivered: "house.fill"
@@ -110,7 +117,40 @@ enum OrderStatus: String, Codable, CaseIterable {
         }
     }
 
-    var isClosed: Bool { self == .delivered || self == .cancelled }
+    var isClosed: Bool { self == .delivered || self == .collected || self == .cancelled }
+}
+
+enum Fulfillment: String, Codable, CaseIterable {
+    case delivery, pickup
+}
+
+enum TravelMode: String, Codable, CaseIterable {
+    case driving, walking
+
+    var label: String { self == .driving ? "Drive" : "Walk" }
+    var icon: String { self == .driving ? "car.fill" : "figure.walk" }
+}
+
+/// When to leave for pickup so you arrive as the food comes out.
+/// Mirrors app/models.py PickupPlan.
+struct PickupPlan: Codable, Hashable {
+    let decision: String  // wait | leave_now | ready | too_far
+    let message: String
+    let mode: TravelMode
+    let distanceKm: Double
+    let travelMin: Double
+    let tripMin: Double
+    let routeSource: String
+    let readyAt: Date
+    let readyBy: Date
+    let targetArrivalAt: Date
+    let leaveAt: Date
+    let arriveAt: Date
+    let foodWaitMin: Double
+    let yourWaitMin: Double
+    let computedAt: Date
+
+    var shouldWait: Bool { decision == "wait" }
 }
 
 struct Order: Codable, Identifiable, Hashable {
@@ -126,8 +166,14 @@ struct Order: Codable, Identifiable, Hashable {
     let quotedEta: EtaPrediction?
     let currentEta: EtaPrediction?
     let dispatch: DispatchPlan?
+    let fulfillment: Fulfillment
+    let pickupMode: TravelMode
+    let pickup: PickupPlan?
+    let readyAt: Date?
 
     var itemCount: Int { lines.reduce(0) { $0 + $1.quantity } }
+    var isPickup: Bool { fulfillment == .pickup }
+    var timeline: [OrderStatus] { isPickup ? OrderStatus.pickupTimeline : OrderStatus.timeline }
 }
 
 struct DeliveryRecord: Codable, Hashable {
@@ -171,4 +217,23 @@ struct CreateOrderBody: Encodable {
     let restaurantId: String
     let lines: [OrderLine]
     let raining: Bool
+    var fulfillment: Fulfillment = .delivery
+    var pickupLat: Double? = nil
+    var pickupLng: Double? = nil
+    var pickupMode: TravelMode = .driving
+}
+
+struct PickupQuoteBody: Encodable {
+    let userId: String
+    let restaurantId: String
+    let itemCount: Int
+    let lat: Double?
+    let lng: Double?
+    let mode: TravelMode
+}
+
+struct PickupPlanBody: Encodable {
+    let lat: Double?
+    let lng: Double?
+    let mode: TravelMode?
 }
