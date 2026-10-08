@@ -25,47 +25,68 @@ type DishStatus = {
 
 export function Dashboard({ onNavigate }: { onNavigate: (t: any) => void }) {
   const ov = useApi<Overview>('/overview');
-  const today = ov.data?.demoDate;
+  const todayDate = ov.data?.demoDate;
+  // Calendar: when set, the dashboard shows that PAST day instead of live today.
+  const [picked, setPicked] = useState<string>('');
+  const viewing = picked || todayDate; // the date currently displayed
+  const isToday = !picked || picked === todayDate;
 
-  // Dishes sold TODAY only — never fall back to all-time (that caused the chart
-  // to briefly show lifetime totals like Coca-Cola ~3900). Wait for `today`.
-  const dishesToday = useApi<Dish[]>(today ? `/sales/by-dish?date=${today}` : '', [today]);
+  // Per-day totals (used to fill KPIs when viewing a past day).
+  const byDay = useApi<{ businessDate: string; orders: number; gross: number; fees: number; net: number }[]>('/sales/by-day');
+  const dayRow = (byDay.data ?? []).find((d) => d.businessDate === viewing);
+
+  // Dishes sold on the VIEWED day (live today, or the picked historical day).
+  const dishesToday = useApi<Dish[]>(viewing ? `/sales/by-dish?date=${viewing}` : '', [viewing]);
   const dishStatus = useApi<DishStatus[]>('/dishes/status');
   const [openDish, setOpenDish] = useState<string | null>(null);
 
   const o = ov.data;
+  // KPIs: live overview for today; otherwise the picked day's row from by-day.
+  const kpi = isToday
+    ? o?.today
+    : dayRow ?? { orders: 0, gross: 0, fees: 0, net: 0 };
   const topToday = (dishesToday.data ?? []).filter((d) => d.qty > 0).slice(0, 8);
   const dishes = dishStatus.data ?? [];
   const needAttention = dishes.filter((d) => d.status !== 'safe');
 
   return (
     <div className="space-y-6">
-      {/* Current-day banner */}
+      {/* Current-day banner + calendar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm text-muted">
           <Clock size={15} className="text-brand" />
-          <span>Today — <span className="font-semibold text-text">{o?.demoDate ?? '—'}</span></span>
-          <Badge tone="ok">live</Badge>
+          <span>{isToday ? 'Today' : 'Viewing'} — <span className="font-semibold text-text">{viewing ?? '—'}</span></span>
+          {isToday ? <Badge tone="ok">live</Badge> : <Badge tone="neutral">past day</Badge>}
         </div>
-        <button onClick={() => onNavigate('alltime')} className="text-xs font-medium text-brand hover:underline">
-          View all-time trends →
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={picked || todayDate || ''}
+            max={todayDate}
+            onChange={(e) => setPicked(e.target.value === todayDate ? '' : e.target.value)}
+            className="rounded-lg glass-inset border border-transparent px-2.5 py-1.5 text-xs text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-brand [color-scheme:dark]"
+            title="Pick a day to see that day's sales"
+          />
+          {!isToday && (
+            <button onClick={() => setPicked('')} className="text-xs font-medium text-brand hover:underline">Back to today →</button>
+          )}
+        </div>
       </div>
 
-      {/* Today's KPIs */}
+      {/* KPIs for the viewed day */}
       <motion.div variants={stagger} initial="initial" animate="animate" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Orders today" value={o ? num(o.today.orders) : ''} sub={o ? `fees ${money(o.today.fees)}` : undefined} icon={<ShoppingBag size={16} />} tone="ok" loading={ov.loading} />
-        <StatCard label="Net revenue today" value={o ? money(o.today.net) : ''} sub={o ? `${money(o.today.gross)} gross` : undefined} icon={<DollarSign size={16} />} tone="brand" loading={ov.loading} />
+        <StatCard label={isToday ? 'Orders today' : 'Orders'} value={kpi ? num(kpi.orders) : ''} sub={kpi ? `fees ${money(kpi.fees)}` : undefined} icon={<ShoppingBag size={16} />} tone="ok" loading={ov.loading || (!isToday && byDay.loading)} />
+        <StatCard label={isToday ? 'Net revenue today' : 'Net revenue'} value={kpi ? money(kpi.net) : ''} sub={kpi ? `${money(kpi.gross)} gross` : undefined} icon={<DollarSign size={16} />} tone="brand" loading={ov.loading || (!isToday && byDay.loading)} />
         <StatCard label="Active alerts" value={o ? num(o.activeAlerts) : ''} sub="needs attention" icon={<TriangleAlert size={16} />} tone="warn" loading={ov.loading} />
         <StatCard label="Low / out of stock" value={o ? num(o.lowStockCount) : ''} sub={o ? `${o.overstockCount} overstocked` : undefined} icon={<PackageX size={16} />} tone="danger" loading={ov.loading} />
       </motion.div>
 
-      {/* Dishes sold today */}
+      {/* Dishes sold on the viewed day */}
       <Card>
-        <SectionTitle right={<Badge tone="neutral">updates live</Badge>}>
-          <span className="flex items-center gap-1.5"><UtensilsCrossed size={14} /> Dishes sold today</span>
+        <SectionTitle right={<Badge tone="neutral">{isToday ? 'updates live' : viewing}</Badge>}>
+          <span className="flex items-center gap-1.5"><UtensilsCrossed size={14} /> {isToday ? 'Dishes sold today' : `Dishes sold on ${viewing}`}</span>
         </SectionTitle>
-        {dishesToday.loading || !today ? (
+        {dishesToday.loading || !viewing ? (
           <Skeleton className="h-64 w-full" />
         ) : topToday.length ? (
           <ResponsiveContainer width="100%" height={300}>
