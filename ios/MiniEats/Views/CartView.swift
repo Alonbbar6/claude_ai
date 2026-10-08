@@ -18,7 +18,7 @@ struct CartView: View {
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 20) {
-                            Text(CustomerStore.restaurantName).foregroundStyle(.secondary)
+                            Text(store.restaurant.name).foregroundStyle(.secondary)
                             VStack(spacing: 12) {
                                 ForEach(store.cartLines, id: \.dish.id) { line in
                                     HStack(spacing: 12) {
@@ -59,6 +59,8 @@ struct CartView: View {
                                     }
                                 }
                             }
+
+                            pickupTiming
 
                             Divider()
                             HStack {
@@ -103,7 +105,61 @@ struct CartView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
             }
+            .onAppear {
+                store.location.start()
+                store.suggestMode()
+                Task { await store.quoteCart() }
+            }
+            // Re-quote when the customer moves.
+            .task(id: store.location.movementKey) { await store.quoteCart() }
         }
+    }
+
+    /// When the food will be ready and when to leave, from the on-device model
+    /// and the phone's location (the old app asked the server for this).
+    @ViewBuilder private var pickupTiming: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(fulfillment == "to_go" ? "Pickup timing" : "Kitchen timing").font(.headline)
+                Spacer()
+                if fulfillment == "to_go" {
+                    Picker("Getting there", selection: Binding(
+                        get: { store.mode }, set: { m in Task { await store.setMode(m) } })
+                    ) {
+                        ForEach(TravelMode.allCases, id: \.self) { Label($0.label, systemImage: $0.icon).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 150)
+                }
+            }
+            if let ready = store.cartReady {
+                InfoRow(label: "Food ready", value: "~\(Format.minutes(ready.p50)) (by \(Format.minutes(ready.p90)))")
+            }
+            if fulfillment == "to_go" {
+                if let plan = store.quote {
+                    InfoRow(label: "Your trip", value: "\(Format.km(plan.distanceKm)) · \(Format.minutes(plan.tripMin)) \(plan.verb)")
+                    // A live timer, not a clock time: it keeps counting while the cart is open.
+                    HStack {
+                        Text("Leave").foregroundStyle(.secondary)
+                        Spacer()
+                        LeaveCountdown(plan: plan, compact: true).fontWeight(.semibold)
+                        if plan.shouldWait {
+                            Text("(at \(Format.time(plan.leaveAt)))").foregroundStyle(.secondary)
+                        }
+                    }
+                    Label(plan.message, systemImage: plan.shouldWait ? "clock" : "figure.walk.departure")
+                        .font(.footnote)
+                        .foregroundStyle(plan.foodWaitMin > PickupPlanner.freshHoldMin || plan.tooFar ? Color.warn : Color.fresh)
+                } else if store.location.isDenied {
+                    Text("Turn on location in Settings to see when to leave.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Finding your location to plan when to leave…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityIdentifier("pickup-timing")
     }
 
     private func fulfillmentCard(_ value: String, icon: String, title: String, hint: String) -> some View {

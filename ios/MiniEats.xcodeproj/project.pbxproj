@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -100,7 +100,7 @@
 		BE483B8AB8EB7522F10F7DAC /* MiniEatsMerchantUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MiniEatsMerchantUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFA9491B3011B0B9421F516C /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		D792FDE4212331534FA42C70 /* Routing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Routing.swift; sourceTree = "<group>"; };
-		D9D09291A9F3EB4A5DCA504C /* MiniEatsMerchant.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MiniEatsMerchant.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D9D09291A9F3EB4A5DCA504C /* MiniEatsMerchant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MiniEatsMerchant.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DF026FC4EBE692408FB1B7C2 /* BarMadeVendorsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarMadeVendorsView.swift; sourceTree = "<group>"; };
 		E4959754146FF925F93C4E7E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EF76056A461F3F7226355157 /* BarMadeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarMadeViews.swift; sourceTree = "<group>"; };
@@ -337,7 +337,6 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					2492A7A743961945BAD6BC4A = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					3C58E8D3C64AB7F071FEBEAF = {
@@ -367,7 +366,6 @@
 			);
 			mainGroup = C35DD95B610792EBCDB4541B;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -529,6 +527,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8CN54MQ3P6;
 				INFOPLIST_FILE = MiniEatsMerchant/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -714,6 +713,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8CN54MQ3P6;
 				INFOPLIST_FILE = MiniEatsMerchant/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

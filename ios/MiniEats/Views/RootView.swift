@@ -12,6 +12,9 @@ struct RootView: View {
                 NavigationStack { MenuView() }
                     .tabItem { Label("Menu", systemImage: "fork.knife") }
                     .tag(CustomerStore.Tab.menu)
+                NavigationStack { NearbyMapView() }
+                    .tabItem { Label("Map", systemImage: "map.fill") }
+                    .tag(CustomerStore.Tab.map)
                 OrdersView()
                     .tabItem { Label("Orders", systemImage: "receipt") }
                     .badge(store.activeOrder == nil ? 0 : 1)

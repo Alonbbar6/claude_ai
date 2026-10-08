@@ -15,6 +15,14 @@ final class OrderFlowUITests: XCTestCase {
     func testPlaceOrderAndWatchTheKitchenMoveIt() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-barMadeServerURL", server, "-uiTestReset"]
+        // Location / notification permission sheets: allow and carry on.
+        addUIInterruptionMonitor(withDescription: "permissions") { alert in
+            for title in ["Allow While Using App", "Allow Once", "Allow"] where alert.buttons[title].exists {
+                alert.buttons[title].tap()
+                return true
+            }
+            return false
+        }
         app.launch()
 
         // Welcome: name only.
@@ -29,6 +37,13 @@ final class OrderFlowUITests: XCTestCase {
         let first = app.buttons["dish-MENU-001"]
         XCTAssertTrue(first.waitForExistence(timeout: 70), "menu did not load from \(server)")
         shot(app, "2-menu")
+
+        // Map tab: you, the restaurant and the trip.
+        app.tabBars.buttons["Map"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["trip-card"].waitForExistence(timeout: 10))
+        sleep(4)  // routing + map tiles
+        shot(app, "2a-map")
+        app.tabBars.buttons["Menu"].tap()
         app.swipeUp()
         let dish = app.buttons["dish-MENU-005"]
         XCTAssertTrue(dish.waitForExistence(timeout: 5))
@@ -56,7 +71,14 @@ final class OrderFlowUITests: XCTestCase {
         // Tracker: the kitchen has it.
         let number = app.staticTexts["order-number"]
         XCTAssertTrue(number.waitForExistence(timeout: 20), "order was not placed")
+        // The first order asks for notification permission (system sheet).
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        if springboard.buttons["Allow"].waitForExistence(timeout: 3) { springboard.buttons["Allow"].tap() }
         XCTAssertTrue(app.staticTexts["The kitchen has your order"].waitForExistence(timeout: 5))
+        // With a location fix, the planner says when to leave (a drink is ready in ~2 min: leave now).
+        XCTAssertTrue(app.staticTexts["leave-now"].waitForExistence(timeout: 20)
+                      || app.staticTexts["leave-countdown"].exists, "no pickup plan shown")
+        XCTAssertTrue(app.otherElements["tracking-map"].exists || app.maps.firstMatch.exists)
         shot(app, "4-received")
 
         // The kitchen (any client of the API, here the test itself) moves it; the phone follows.

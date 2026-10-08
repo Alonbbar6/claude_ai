@@ -26,6 +26,7 @@ struct OrdersView: View {
 }
 
 private struct OrderRow: View {
+    @Environment(CustomerStore.self) private var store
     let order: BarMadeOrder
 
     var body: some View {
@@ -35,6 +36,11 @@ private struct OrderRow: View {
                 Badge(text: orderStatusTitle(order.status), color: orderStatusColor(order.status))
                 Spacer()
                 Text(Format.money(order.total)).font(.subheadline.monospacedDigit())
+            }
+            // The leave timer while the kitchen still has the order.
+            if order.isOpen, order.status != "READY", let plan = store.plans[order.id] {
+                LeaveCountdown(plan: plan, compact: true)
+                    .font(.subheadline.weight(.bold)).foregroundStyle(Color.goldText)
             }
             Text(order.items.map { "\($0.quantity)× \($0.name)" }.joined(separator: ", "))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)

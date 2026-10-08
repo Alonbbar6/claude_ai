@@ -74,8 +74,15 @@ struct MenuView: View {
                     } label: {
                         HStack {
                             Circle().fill(Color.gold).frame(width: 10, height: 10)
-                            Text("Your order \(active.displayNumber) is \(orderStatusTitle(active.status).lowercased())")
-                                .fontWeight(.semibold)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Your order \(active.displayNumber) is \(orderStatusTitle(active.status).lowercased())")
+                                    .fontWeight(.semibold)
+                                // The leave timer on the home screen, so it's seen without opening the order.
+                                if active.status != "READY", let plan = store.plans[active.id] {
+                                    LeaveCountdown(plan: plan, compact: true)
+                                        .font(.subheadline.weight(.bold)).foregroundStyle(Color.gold)
+                                }
+                            }
                             Spacer()
                             Text("Track →").fontWeight(.bold).foregroundStyle(Color.gold)
                         }
@@ -87,6 +94,8 @@ struct MenuView: View {
                 }
 
                 restaurantCard
+
+                if !store.arrivalPicks.isEmpty { arrivalPicks }
 
                 ForEach(store.sections, id: \.title) { section in
                     VStack(alignment: .leading, spacing: 10) {
@@ -108,15 +117,61 @@ struct MenuView: View {
         .refreshable { await store.load() }
     }
 
+    /// Dishes whose kitchen time fits the trip from where the phone is now:
+    /// order one of these and it comes out about as you walk in.
+    private var arrivalPicks: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Ready when you arrive").font(.title3.weight(.black))
+                Spacer()
+                if let trip = store.trip {
+                    Text("\(Format.minutes(store.tripMinutes(trip.durationMin))) \(store.mode.verb) away")
+                        .font(.caption).foregroundStyle(Color.inkSoft)
+                }
+            }
+            ForEach(store.arrivalPicks) { pick in
+                Button { openDish = pick.dish } label: {
+                    HStack(spacing: 12) {
+                        DishImage(url: pick.dish.imageURL, size: 48)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(pick.dish.name).font(.subheadline.weight(.bold)).foregroundStyle(Color.night)
+                            Text("Kitchen ~\(Format.minutes(pick.readyMin)) · \(pick.headline)")
+                                .font(.caption).foregroundStyle(Color.inkSoft)
+                        }
+                        Spacer(minLength: 0)
+                        Text(Format.money(pick.dish.price)).font(.subheadline.weight(.black)).foregroundStyle(Color.goldText)
+                        ZStack {
+                            Circle().fill(Color.gold).frame(width: 32, height: 32)
+                            Image(systemName: "plus").font(.subheadline.weight(.black)).foregroundStyle(Color.night)
+                        }
+                        .onTapGesture { store.add(pick.dish) }
+                        .accessibilityLabel("Add \(pick.dish.name)")
+                    }
+                    .padding(12)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("pick-\(pick.dish.id)")
+            }
+            Text("Picked for your distance and the kitchen's pace right now, so the food comes out as you walk in.")
+                .font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+
     private var restaurantCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Chip(text: "● Open now", background: .fresh, foreground: .white)
-                Chip(text: "⏱ Ready in ~\(CustomerStore.restaurantPrepMinutes) min", background: .white, foreground: .night)
+                // From the on-device kitchen model: quickest dish, ordered now, given how busy the kitchen is.
+                Chip(text: "⏱ Ready in ~\(Format.minutes(store.menuReadyMinutes))", background: .white, foreground: .night)
             }
-            Text("ITALIAN · LITTLE ITALY").font(.caption.weight(.black)).foregroundStyle(Color.goldText).padding(.top, 6)
-            Text(CustomerStore.restaurantName).font(.title.weight(.black)).foregroundStyle(Color.night)
-            Text(CustomerStore.restaurantTagline).foregroundStyle(Color.inkSoft)
+            HStack(spacing: 8) {
+                Text(store.restaurant.cuisineLine.uppercased()).font(.caption.weight(.black)).foregroundStyle(Color.goldText)
+                if store.restaurant.isQA { Chip(text: "QA TEST", background: .warnTint, foreground: .warn) }
+            }
+            .padding(.top, 6)
+            Text(store.restaurant.name).font(.title.weight(.black)).foregroundStyle(Color.night)
+            Text(store.restaurant.tagline).foregroundStyle(Color.inkSoft)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
