@@ -30,6 +30,21 @@ Without credentials, or if the model's text mentions a number that is not in the
 facts, a fixed template is used instead — the demo never depends on the model.
 `BARMADE_SUMMARY_AI=off` forces the template.
 
+### Team backend (BarMade API)
+
+On startup the site reads stock, menu, orders and expiry alerts from the
+BarMade API and shows them next to the local estimates (dashboard header
+badge, "BarMade" column, expiry alerts). **It never writes to BarMade by
+default** — the API is shared, unauthenticated and has no way to undo an
+order. If BarMade is unreachable the site runs on seed data.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BARMADE_SYNC` | `on` | `off` = fully standalone, no network calls |
+| `BARMADE_URL` | `https://barmade-api.onrender.com` | where to read from |
+| `BARMADE_WRITES` | `off` | `on` = forward classroom orders with `POST /api/orders`. Only against a demo tenant agreed with the backend owner. |
+| `BARMADE_DEMO_CONDITIONS` | `on` | `off` = don't stage the mozzarella/chicken scenario |
+
 ## Demo script (matches PRD §2.3)
 
 1. Open the dashboard: 60 days of seeded history, today's morning sales, no alerts.

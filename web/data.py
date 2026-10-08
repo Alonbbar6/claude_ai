@@ -180,17 +180,19 @@ def seed_history(store, days: int = 60, seed: int = 7) -> None:
                           for ing in store.ingredients.values()}
                 store.confirm_count(counts, "Weekly count (simulated)")
             store.close_day()
+    store.clock = real_clock
 
-    # Today's demo conditions, recorded as normal events so they're traceable.
-    sim[0] = datetime.combine(today, time(9, 30))
+
+def apply_demo_conditions(store) -> None:
+    """Stage today's classroom scenario as ordinary, traceable events:
+    mozzarella three pizzas above its alert line, chicken overstocked."""
     moz = store.ingredients["ING-002"]
-    target = moz.low_threshold + 3 * 150          # three pizzas above the alert line
+    target = moz.low_threshold + 3 * 150
     if moz.on_hand > target:
         store.waste("ING-002", moz.on_hand - target,
-                    "Walk-in fridge left open overnight — mozzarella discarded (manager note)")
-    sim[0] = datetime.combine(today, time(9, 45))
+                    "Demo condition (local only): walk-in fridge left open overnight — mozzarella discarded")
     chicken = store.ingredients["ING-009"]
     double = chicken.par * 2 - chicken.on_hand
     if double > 0:
-        store.receive("ING-009", double, "Bella Foods invoice #4471 — supplier shipped double the standing order")
-    store.clock = real_clock
+        store.receive("ING-009", double,
+                      "Demo condition (local only): Bella Foods invoice #4471 — supplier shipped double the standing order")

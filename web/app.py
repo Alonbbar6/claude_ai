@@ -6,6 +6,9 @@ Run:  .venv/bin/uvicorn web.app:app --reload --port 8010
 
 from __future__ import annotations
 
+import logging
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -13,14 +16,34 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from web.barmade import client_from_env
 from web.data import CHANNELS
 from web.engine import OrderError, Store
 from web.summary import write_summary
 
 STATIC = Path(__file__).resolve().parent / "static"
+log = logging.getLogger("uvicorn.error")
 
-app = FastAPI(title="Barmade Restaurant Inventory Demo", version="0.1.0")
-app.state.store = Store()
+
+def make_store() -> Store:
+    """Seeded store, synced to BarMade unless BARMADE_SYNC=off.
+    BARMADE_DEMO_CONDITIONS=off skips the staged mozzarella/chicken scenario."""
+    client = client_from_env()
+    demo = os.environ.get("BARMADE_DEMO_CONDITIONS", "on").lower() not in ("off", "0", "false")
+    store = Store(barmade=client, demo_conditions=demo)
+    if client is not None:
+        r = store.remote
+        log.info("BarMade %s: %s", "connected" if r["connected"] else "NOT reachable — using seed data", r["url"] if r["connected"] else r["error"])
+    return store
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.store = make_store()
+    yield
+
+
+app = FastAPI(title="Barmade Restaurant Inventory Demo", version="0.2.0", lifespan=lifespan)
 
 _STATUS = {"UNKNOWN_CHANNEL": 404, "UNKNOWN_ITEM": 404, "UNKNOWN_INGREDIENT": 404,
            "INSUFFICIENT_ESTIMATED_STOCK": 409, "ITEM_PAUSED": 409}
@@ -226,8 +249,26 @@ async def close_day():
 
 @app.post("/api/reset")
 async def reset():
-    app.state.store = Store()
-    return {"ok": True, "orders": len(app.state.store.orders)}
+    app.state.store = make_store()
+    return {"ok": True, "orders": len(app.state.store.orders), "barmade": app.state.store.remote_view()}
+
+
+# ---- BarMade backend ---------------------------------------------------------
+
+@app.get("/api/barmade")
+async def barmade_status():
+    return store().remote_view()
+
+
+class SyncIn(BaseModel):
+    adopt: bool = False     # true: set local estimates to BarMade's stock (recorded as count events)
+
+
+@app.post("/api/barmade/sync")
+async def barmade_sync(body: SyncIn | None = None):
+    s = store()
+    s.sync_from_barmade(adopt=bool(body and body.adopt))
+    return s.remote_view()
 
 
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")

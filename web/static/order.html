@@ -92,7 +92,8 @@ $("#submit").onclick = async () => {
     $("#out").innerHTML = `<div class="result"><b>Order ${o.id} received via ${esc(o.channel_label)}</b> — ${money(o.total)}
       <div class="muted">${o.lines.map(l => `${l.quantity}× ${esc(l.name)}`).join(", ")}</div>
       <div class="mv"><b>What it did to the kitchen's estimated stock</b>${o.movements.map(m => `<div><span>${esc(m.ingredient)}</span><span>${m.delta} ${m.unit} → ${Number(m.after).toLocaleString()} ${m.unit}</span></div>`).join("")}</div>
-      ${r.alerts_raised.length ? `<div class="mv" style="color:#9a4b00"><b>⚠ This order triggered an alert:</b> ${r.alerts_raised.map(a => esc(a.ingredient)).join(", ")} — check the manager dashboard.</div>` : ""}</div>`;
+      ${r.alerts_raised.length ? `<div class="mv" style="color:#9a4b00"><b>⚠ This order triggered an alert:</b> ${r.alerts_raised.map(a => esc(a.ingredient)).join(", ")} — check the manager dashboard.</div>` : ""}
+      ${o.remote && o.remote.status !== "local_only" ? `<div class="mv muted">${o.remote.status === "sent" ? `Recorded in the team's BarMade backend as ${esc(o.remote.id)}.` : `Kept locally — BarMade didn't accept it (${esc(o.remote.error)}).`}</div>` : ""}</div>`;
     cart = {}; menu = await api("/api/menu"); renderMenu(); update();
   } catch (e) {
     const short = (e.details && e.details.shortages || []).map(s => `${esc(s.ingredient)} (needs ${s.needed} ${s.unit}, est. ${s.estimated_on_hand})`).join("; ");

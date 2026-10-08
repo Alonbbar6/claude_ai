@@ -14,9 +14,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Callable
 
+import httpx
+
+from web.barmade import BarMadeClient, BarMadeError
 from web.data import (
     CHANNELS, CHANNELS_BY_ID, INGREDIENTS, MENU, RESTAURANT,
-    normalize, seed_history, to_channel_payload,
+    apply_demo_conditions, normalize, seed_history, to_channel_payload,
 )
 
 EPS = 1e-9
@@ -95,6 +98,7 @@ class Order:
     customer: str | None = None
     event_ids: list[str] = field(default_factory=list)
     status: str = "accepted"
+    remote: dict | None = None      # what BarMade said when we forwarded the order
 
 
 @dataclass
@@ -118,7 +122,8 @@ def fmt(v: float) -> str:
 
 
 class Store:
-    def __init__(self, clock: Callable[[], datetime] | None = None, seed: bool = True):
+    def __init__(self, clock: Callable[[], datetime] | None = None, seed: bool = True,
+                 barmade: BarMadeClient | None = None, demo_conditions: bool = True):
         self.clock = clock or (lambda: datetime.now().replace(microsecond=0))
         self.ingredients = {i[0]: Ingredient(*i[:4], par=i[4], low_threshold=i[5], daily_usage=i[6]) for i in INGREDIENTS}
         self.menu = {m[0]: MenuItem(m[0], m[1], m[2], m[3], [RecipeLine(k, v) for k, v in m[4].items()]) for m in MENU}
@@ -127,8 +132,71 @@ class Store:
         self.alerts: list[Alert] = []
         self.closed_days: dict[date, dict] = {}
         self._seq = {"ORD": 0, "EVT": 0, "ALT": 0}
+        # The client is attached only after seeding: synthetic history must
+        # never be forwarded to the real backend.
+        self.barmade: BarMadeClient | None = None
+        self.remote: dict = {"enabled": barmade is not None, "url": barmade.base_url if barmade else None,
+                             "writes": bool(barmade and barmade.allow_writes),
+                             "connected": False, "last_sync": None, "error": None,
+                             "inventory": {}, "alerts": [], "orders": [], "menu_synced": False}
         if seed:
             seed_history(self)
+        self.barmade = barmade
+        if barmade is not None:
+            self.sync_from_barmade(adopt=True)
+        if seed and demo_conditions:
+            apply_demo_conditions(self)
+
+    # ---- BarMade sync --------------------------------------------------------
+
+    def sync_from_barmade(self, adopt: bool = False) -> dict:
+        """Pull BarMade's menu, stock, orders and expiry alerts.
+
+        With `adopt`, local estimates are set to BarMade's usable stock through
+        ordinary `count` events, so the change is visible in each ingredient's
+        history. Without it, the remote figures are only shown alongside.
+        """
+        if self.barmade is None:
+            raise OrderError("BARMADE_DISABLED", "BarMade sync is off (BARMADE_SYNC=off).")
+        try:
+            inventory = self.barmade.inventory()
+            menu = self.barmade.menu()
+            orders = self.barmade.orders()
+            alerts = self.barmade.alerts()
+        except (BarMadeError, httpx.HTTPError) as e:
+            self.remote.update(connected=False, error=f"{type(e).__name__}: {str(e)[:160]}")
+            return self.remote
+        self.remote.update(connected=True, error=None, last_sync=_iso(self.clock()),
+                           inventory={i["id"]: i for i in inventory}, alerts=alerts, orders=orders)
+        for m in menu:   # prices and recipes are BarMade's to define
+            if m["id"] in self.menu:
+                item = self.menu[m["id"]]
+                item.price = float(m["price"])
+                lines = [RecipeLine(l["ingredientId"], float(l["quantity"])) for l in m.get("ingredients", [])
+                         if l["ingredientId"] in self.ingredients]
+                if lines:
+                    item.recipe = lines
+        self.remote["menu_synced"] = bool(menu)
+        if adopt:
+            counts = {i["id"]: float(i["totalQuantity"]) for i in inventory if i["id"] in self.ingredients}
+            self.confirm_count(counts, "Synced from BarMade — usable stock, expired batches excluded")
+        return self.remote
+
+    def remote_view(self) -> dict:
+        inv = self.remote["inventory"]
+        drift = []
+        for ing in self.ingredients.values():
+            r = inv.get(ing.id)
+            if r:
+                drift.append({"id": ing.id, "name": ing.name, "unit": ing.unit, "local": round(ing.on_hand, 2),
+                              "barmade": r["totalQuantity"], "expired": r.get("expiredQuantity", 0),
+                              "batch_status": [b["status"] for b in r.get("batches", [])],
+                              "delta": round(ing.on_hand - r["totalQuantity"], 2)})
+        return {k: v for k, v in self.remote.items() if k not in ("inventory", "orders")} | {
+            "stock": drift, "remote_orders": len(self.remote["orders"]),
+            "alerts": [{"id": a.get("id"), "type": a.get("type"), "ingredient": a.get("ingredientName"),
+                        "batch": a.get("batchId"), "message": a.get("message"), "expires_at": a.get("expiresAt")}
+                       for a in self.remote["alerts"] if a.get("status", "ACTIVE") == "ACTIVE"]}
 
     def _next(self, prefix: str) -> str:
         self._seq[prefix] += 1
@@ -226,6 +294,28 @@ class Store:
 
         order = Order(self._next("ORD"), channel, CHANNELS_BY_ID[channel]["label"], payload, order_lines,
                       round(sum(l.line_total for l in order_lines), 2), self.clock(), customer)
+        # Forward the canonical order to BarMade before touching local stock, so
+        # a BarMade rejection (its own stock check) stops the order here too.
+        # Read-only by default: the order then stays local.
+        if self.barmade is not None and not self.barmade.allow_writes:
+            order.remote = {"status": "local_only", "url": self.remote["url"],
+                            "note": "Writes to BarMade are off; order recorded locally only."}
+        elif self.barmade is not None:
+            try:
+                remote = self.barmade.create_order(canonical)
+                order.remote = {"status": "sent", "id": remote.get("id"),
+                                "consumed": remote.get("consumed", []), "url": self.remote["url"]}
+            except BarMadeError as e:
+                if e.status == 409:
+                    raise OrderError("INSUFFICIENT_ESTIMATED_STOCK", f"BarMade rejected the order: {e.message}",
+                                     {"shortages": [{"ingredient": s.get("ingredientName"), "ingredient_id": s.get("ingredientId"),
+                                                     "unit": s.get("unit"), "needed": s.get("required", s.get("needed")),
+                                                     "estimated_on_hand": s.get("available")}
+                                                    for s in e.details.get("shortages", [])], "source": "barmade"})
+                order.remote = {"status": "failed", "error": f"{e.code}: {e.message}"}
+            except httpx.HTTPError as e:
+                order.remote = {"status": "failed", "error": f"{type(e).__name__}: {str(e)[:120]}"}
+                self.remote.update(connected=False, error=order.remote["error"])
         for ing_id, qty in need.items():
             ev = self._move(ing_id, -qty, "sale", f"{order.id} via {order.channel_label}", order.id)
             order.event_ids.append(ev.id)
@@ -435,6 +525,7 @@ class Store:
              "created_at": _iso(o.created_at), "total": o.total, "status": o.status,
              "lines": [{"menu_item_id": l.menu_item_id, "name": l.name, "quantity": l.quantity,
                         "unit_price": l.unit_price, "line_total": l.line_total} for l in o.lines]}
+        d["remote"] = o.remote
         if trace:
             d["raw_payload"] = o.raw_payload
             d["movements"] = [self.event_view(e) for e in self.events if e.order_id == o.id]
@@ -461,4 +552,5 @@ class Store:
             "specials": self.overstock_specials(),
             "history": self.history(14),
             "history_days": len(self.closed_days),
+            "barmade": self.remote_view(),
         }

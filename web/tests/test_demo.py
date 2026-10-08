@@ -2,10 +2,12 @@
 
 from datetime import datetime
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from web import app as app_module
+from web.barmade import BarMadeError
 from web.data import normalize, to_channel_payload
 from web.engine import OrderError, Store
 from web.summary import fallback_summary, grounding_check
@@ -19,8 +21,104 @@ def store():
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("BARMADE_SUMMARY_AI", "off")
+    monkeypatch.setenv("BARMADE_SYNC", "off")
     app_module.app.state.store = Store()
     return TestClient(app_module.app)
+
+
+class FakeBarMade:
+    """Stands in for barmade-api.onrender.com: same shapes, no network."""
+    base_url = "https://fake.barmade"
+
+    def __init__(self, fail_orders: Exception | None = None, allow_writes: bool = True):
+        self.fail_orders = fail_orders
+        self.allow_writes = allow_writes
+        self.created: list[list[tuple[str, int]]] = []
+
+    def inventory(self):
+        return [{"id": "ING-002", "name": "Mozzarella Cheese", "unit": "g", "totalQuantity": 11500, "expiredQuantity": 0,
+                 "batches": [{"batchId": "MZ-001", "status": "EXPIRING_SOON"}]},
+                {"id": "ING-011", "name": "Basil", "unit": "g", "totalQuantity": 400, "expiredQuantity": 100,
+                 "batches": [{"batchId": "BA-001", "status": "EXPIRED"}]}]
+
+    def menu(self):
+        return [{"id": "MENU-005", "name": "Coca-Cola", "price": 3.49, "ingredients": [{"ingredientId": "ING-012", "quantity": 1}]}]
+
+    def orders(self):
+        return [{"id": "ORD-001"}, {"id": "ORD-002"}]
+
+    def alerts(self):
+        return [{"id": "ALERT-003", "type": "EXPIRED", "status": "ACTIVE", "ingredientName": "Basil", "batchId": "BA-001",
+                 "message": "Basil batch BA-001 has expired.", "expiresAt": "2026-10-06T23:59:59"}]
+
+    def create_order(self, lines):
+        if self.fail_orders:
+            raise self.fail_orders
+        self.created.append(lines)
+        return {"id": f"ORD-{100 + len(self.created)}", "consumed": [{"ingredientName": "Coca-Cola Cans", "quantity": 1, "unit": "cans", "batches": [{"batchId": "CC-001"}]}]}
+
+
+def test_barmade_sync_adopts_stock_as_count_events_and_menu_prices():
+    s = Store(barmade=FakeBarMade(), demo_conditions=False)
+    assert s.remote["connected"] and s.remote["last_sync"]
+    assert s.ingredients["ING-002"].on_hand == 11500 and s.ingredients["ING-011"].on_hand == 400
+    sync = [e for e in s.events if e.type == "count" and "BarMade" in e.note]
+    assert {e.ingredient_id for e in sync} <= {"ING-002", "ING-011"}
+    assert s.menu["MENU-005"].price == 3.49
+    view = s.remote_view()
+    assert view["alerts"][0]["type"] == "EXPIRED" and view["remote_orders"] == 2
+    assert next(r for r in view["stock"] if r["id"] == "ING-011")["batch_status"] == ["EXPIRED"]
+
+
+def test_demo_conditions_still_apply_on_top_of_synced_stock():
+    s = Store(barmade=FakeBarMade())
+    assert s.ingredients["ING-002"].on_hand == 4000 + 450    # three pizzas above the alert line
+    assert "Demo condition" in [e for e in s.events if e.ingredient_id == "ING-002"][-1].note
+
+
+def test_orders_are_forwarded_to_barmade_but_seed_history_is_not():
+    fake = FakeBarMade()
+    s = Store(barmade=fake)
+    assert fake.created == []                     # 60 days of synthetic orders stayed local
+    o = s.place_order("doordash", [("MENU-005", 2)])
+    assert fake.created == [[("MENU-005", 2)]]
+    assert o.remote["status"] == "sent" and o.remote["id"] == "ORD-101"
+    assert s.order_view(o)["remote"]["id"] == "ORD-101"
+
+
+def test_barmade_read_only_is_the_default_and_never_posts():
+    fake = FakeBarMade(allow_writes=False)
+    s = Store(barmade=fake)
+    o = s.place_order("uber_eats", [("MENU-005", 1)])
+    assert fake.created == [] and o.remote["status"] == "local_only"
+    assert s.remote["writes"] is False and s.remote["connected"] is True
+
+
+def test_real_client_refuses_writes_unless_enabled():
+    from web.barmade import BarMadeClient
+    c = BarMadeClient("https://127.0.0.1:9")          # never contacted
+    with pytest.raises(BarMadeError) as e:
+        c.create_order([("MENU-005", 1)])
+    assert e.value.code == "WRITES_DISABLED"
+
+
+def test_barmade_409_blocks_the_order_locally_too():
+    err = BarMadeError(409, "INSUFFICIENT_INVENTORY", "Not enough inventory: Coca-Cola Cans.",
+                       {"shortages": [{"ingredientId": "ING-012", "ingredientName": "Coca-Cola Cans", "unit": "cans"}]})
+    s = Store(barmade=FakeBarMade(fail_orders=err))
+    before, n = s.ingredients["ING-012"].on_hand, len(s.orders)
+    with pytest.raises(OrderError) as e:
+        s.place_order("web", [("MENU-005", 1)])
+    assert e.value.code == "INSUFFICIENT_ESTIMATED_STOCK" and e.value.details["source"] == "barmade"
+    assert s.ingredients["ING-012"].on_hand == before and len(s.orders) == n
+
+
+def test_barmade_outage_keeps_the_demo_running():
+    s = Store(barmade=FakeBarMade(fail_orders=httpx.ConnectError("boom")))
+    n = len(s.orders)
+    o = s.place_order("dine_in", [("MENU-005", 1)])
+    assert o.remote["status"] == "failed" and "ConnectError" in o.remote["error"]
+    assert s.remote["connected"] is False and len(s.orders) == n + 1
 
 
 def test_seed_gives_two_months_of_context(store):

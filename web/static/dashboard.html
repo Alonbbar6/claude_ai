@@ -70,6 +70,8 @@
   <div><h1 id="rname">Restaurant <span class="tag">Barmade inventory demo · provisional name</span></h1>
     <small>Owner / manager view · simulated channels · synthetic data · stock levels are estimates</small></div>
   <div class="row">
+    <span id="bm-badge" class="tag" title="">Backend: …</span>
+    <button class="sec sm" id="bm-sync" title="Re-read BarMade's stock, menu and expiry alerts">Sync</button>
     <button class="sec" id="rush">Simulate rush</button>
     <button id="close">Close day</button>
     <button class="sec sm" id="reset" title="Reseed the two-month history">Reset demo</button>
@@ -105,8 +107,9 @@
 
   <section>
     <h2>Estimated inventory <span class="muted">click a row for movement history</span></h2>
-    <table><thead><tr><th>Ingredient</th><th>Est. on hand</th><th>vs par</th><th>Status</th><th>Cover</th></tr></thead><tbody id="inv"></tbody></table>
+    <table><thead><tr><th>Ingredient</th><th>Est. on hand</th><th>vs par</th><th>Status</th><th>Cover</th><th id="bm-col">BarMade</th></tr></thead><tbody id="inv"></tbody></table>
     <div id="inv-detail"></div>
+    <div id="bm-foot" class="muted" style="margin-top:6px"></div>
   </section>
 
   <section>
@@ -157,16 +160,27 @@ async function refresh() {
   $("#s-alerts").textContent = state.alerts.length;
   $("#s-low").textContent = state.inventory.filter(i => i.status !== "ok").length;
   $("#s-hist").textContent = state.history_days;
-  renderAlerts(); renderSpecials(); renderMenu(); renderInv(); renderOrders(); renderHist();
+  renderBarmade(); renderAlerts(); renderSpecials(); renderMenu(); renderInv(); renderOrders(); renderHist();
   if (first) { first = false; state.alerts.forEach(a => seenAlerts.add(a.id)); }
+}
+
+function renderBarmade() {
+  const b = state.barmade, badge = $("#bm-badge");
+  if (!b.enabled) { badge.textContent = "Backend: standalone (seed data)"; badge.style.background = "#555"; $("#bm-sync").style.display = "none"; }
+  else if (b.connected) { badge.textContent = `Backend: BarMade ${b.writes ? "read/write" : "read-only"} · synced ${t(b.last_sync)}`; badge.style.background = "#1f7a4a"; }
+  else { badge.textContent = "Backend: BarMade unreachable · using local data"; badge.style.background = "#8a3b12"; }
+  badge.title = b.url ? `${b.url}${b.error ? " — " + b.error : ""}` : "";
 }
 
 function renderAlerts() {
   const el = $("#alerts");
-  if (!state.alerts.length) { el.className = "muted"; el.textContent = "No active alerts."; return; }
+  const remote = (state.barmade.alerts || []);
+  if (!state.alerts.length && !remote.length) { el.className = "muted"; el.textContent = "No active alerts."; return; }
   el.className = "";
   el.innerHTML = state.alerts.map(a => `<div class="alert ${a.kind}"><b>${a.kind === "out" ? "Out" : "Low stock"}: ${esc(a.ingredient)}</b><div>${esc(a.message)}</div>
-    <div class="meta">${t(a.created_at)}${a.order_id ? " · triggered by " + a.order_id : ""}</div></div>`).join("");
+    <div class="meta">${t(a.created_at)}${a.order_id ? " · triggered by " + a.order_id : ""}</div></div>`).join("")
+    + remote.map(a => `<div class="alert ${a.type === "EXPIRED" ? "out" : ""}"><b>${a.type === "EXPIRED" ? "Expired" : "Expiring soon"}: ${esc(a.ingredient)}</b> <span class="chan">from BarMade</span><div>${esc(a.message)}</div>
+    <div class="meta">batch ${esc(a.batch)}${a.expires_at ? " · expires " + esc(String(a.expires_at).slice(0, 10)) : ""}</div></div>`).join("");
   state.alerts.forEach(a => { if (!seenAlerts.has(a.id)) { seenAlerts.add(a.id); toast(`${a.kind === "out" ? "Out of stock" : "Low stock"}: ${a.ingredient}`, a.message.split(".")[0] + "."); } });
 }
 
@@ -193,14 +207,24 @@ function renderMenu() {
 }
 
 function renderInv() {
+  const b = state.barmade, remote = Object.fromEntries((b.stock || []).map(r => [r.id, r]));
+  $("#bm-col").style.display = b.enabled ? "" : "none";
   $("#inv").innerHTML = state.inventory.map(i => {
     const cls = i.status !== "ok" ? i.status : i.overstock ? "over" : "";
+    const r = remote[i.id];
+    const rb = r && r.batch_status.includes("EXPIRED") ? '<span class="badge out">expired batch</span>' : r && r.batch_status.includes("EXPIRING_SOON") ? '<span class="badge low">expiring</span>' : "";
+    const cell = !b.enabled ? "" : `<td class="muted">${r ? `${qty(r.barmade)} ${r.unit}${Math.abs(r.delta) > 0.01 ? ` <span title="local estimate minus BarMade">(${r.delta > 0 ? "+" : ""}${qty(r.delta)})</span>` : ""}<div>${rb}</div>` : "–"}</td>`;
     return `<tr class="click" onclick="toggleInv('${i.id}')"><td><b>${esc(i.name)}</b><div class="muted" style="font-size:11px">${esc(i.category)}</div></td>
       <td>${qty(i.estimated_on_hand)} ${i.unit}</td><td><div class="bar ${cls}"><i style="width:${Math.round(i.fill*100)}%"></i></div><div class="muted" style="font-size:11px">par ${qty(i.par)} · alert ≤ ${qty(i.low_threshold)}</div></td>
-      <td><span class="badge ${cls}">${i.status === "ok" ? (i.overstock ? "Overstock" : "OK") : i.status.toUpperCase()}</span></td><td class="muted">${i.days_of_cover ?? "–"} d</td></tr>`;
+      <td><span class="badge ${cls}">${i.status === "ok" ? (i.overstock ? "Overstock" : "OK") : i.status.toUpperCase()}</span></td><td class="muted">${i.days_of_cover ?? "–"} d</td>${cell}</tr>`;
   }).join("");
+  $("#bm-foot").innerHTML = !b.enabled ? "" : b.connected
+    ? `BarMade column = usable stock in the team backend (expired batches excluded). Differences in parentheses are the local demo conditions and anything BarMade rejected. <a href="#" onclick="adopt();return false">Adopt BarMade quantities</a> records the difference as count adjustments.`
+    : `BarMade not reachable${b.error ? ": " + esc(b.error) : ""}. Showing the last synced figures.`;
   if (openInv) loadInvDetail(openInv); else $("#inv-detail").innerHTML = "";
 }
+async function syncBarmade() { try { await api("/api/barmade/sync", {method:"POST", body:JSON.stringify({adopt:false})}); toast("Synced", "Re-read BarMade stock, menu and alerts."); } catch (e) { toast("Sync failed", e.message || "error"); } refresh(); }
+async function adopt() { try { await api("/api/barmade/sync", {method:"POST", body:JSON.stringify({adopt:true})}); toast("Adopted", "Local estimates now match BarMade; differences recorded as count events."); } catch (e) { toast("Sync failed", e.message || "error"); } refresh(); }
 
 async function loadInvDetail(id) {
   const d = await api(`/api/inventory/${id}`);
@@ -231,7 +255,11 @@ async function loadTrace(id) {
     <b>2. Canonical order</b> → ${o.lines.map(l => `<span class="chan">${l.menu_item_id} × ${l.quantity}</span>`).join("")}
     <div style="margin-top:6px"><b>3. Recipes</b> ${o.recipes.map(r => `<div class="muted">${r.quantity}× ${esc(r.dish)}: ${r.recipe.map(x => `${qty(x.quantity * r.quantity)} ${x.unit} ${esc(x.ingredient)}`).join(", ")}</div>`).join("")}</div>
     <div style="margin-top:6px"><b>4. Ingredient movements</b> <span class="muted">(estimate)</span>
-      <table>${o.movements.map(m => `<tr><td>${esc(m.ingredient)}</td><td class="diff-down">${qty(m.delta)} ${m.unit}</td><td class="muted">${qty(m.before)} → <b>${qty(m.after)}</b> ${m.unit}</td></tr>`).join("")}</table></div></div>`;
+      <table>${o.movements.map(m => `<tr><td>${esc(m.ingredient)}</td><td class="diff-down">${qty(m.delta)} ${m.unit}</td><td class="muted">${qty(m.before)} → <b>${qty(m.after)}</b> ${m.unit}</td></tr>`).join("")}</table></div>
+    <div style="margin-top:6px"><b>5. Team backend</b> ${!o.remote ? '<span class="muted">not forwarded (standalone)</span>'
+      : o.remote.status === "local_only" ? `<span class="badge gray">local only</span> <span class="muted">${esc(o.remote.note)}</span>`
+      : o.remote.status === "sent" ? `<span class="badge">sent to BarMade as ${esc(o.remote.id)}</span> <span class="muted">${(o.remote.consumed || []).map(c => `${esc(c.ingredientName)} −${c.quantity} ${c.unit} from ${(c.batches || []).map(b => b.batchId).join("+")}`).join("; ")}</span>`
+      : `<span class="badge low">not sent</span> <span class="muted">${esc(o.remote.error)}</span>`}</div></div>`;
 }
 
 function renderHist() {
@@ -294,7 +322,7 @@ async function resetDemo() { await api("/api/reset", {method:"POST"}); openInv =
 
 function toast(title, body) { const el = document.createElement("div"); el.className = "toast"; el.innerHTML = `<b>${esc(title)}</b><br>${esc(body)}`; document.body.appendChild(el); setTimeout(() => el.remove(), 6000); }
 
-$("#rush").onclick = rush; $("#close").onclick = closeDay; $("#reset").onclick = resetDemo;
+$("#rush").onclick = rush; $("#close").onclick = closeDay; $("#reset").onclick = resetDemo; $("#bm-sync").onclick = syncBarmade;
 $("#count-review").onclick = reviewCount; $("#count-reload").onclick = loadCountSheet;
 const orderUrl = location.origin + "/order";
 $("#order-url").textContent = orderUrl;
