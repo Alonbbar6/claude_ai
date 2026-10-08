@@ -21,7 +21,7 @@ export function Vendors() {
   const inventory = useApi<InvItem[]>('/inventory');
   const [adding, setAdding] = useState(false);
   const [viewPO, setViewPO] = useState<PO | null>(null);
-  const [manage, setManage] = useState<string | null>(null); // vendor id whose products are open
+  const [manageVendor, setManageVendor] = useState<Vendor | null>(null); // vendor whose product drawer is open
   const [form, setForm] = useState<{ name: string; email: string; phone: string; relationship: Relationship }>({ name: '', email: '', phone: '', relationship: 'regional' });
   const [saving, setSaving] = useState(false);
 
@@ -86,17 +86,10 @@ export function Vendors() {
                   </div>
                   <button onClick={() => remove(v.id)} className="text-muted hover:text-danger"><Trash2 size={15} /></button>
                 </div>
-                <button onClick={() => setManage((m) => (m === v.id ? null : v.id))}
+                <button onClick={() => setManageVendor(v)}
                   className="mt-2 flex items-center gap-1 text-xs font-medium text-brand hover:underline">
-                  <Tag size={12} /> {manage === v.id ? 'Hide products' : 'Manage products'}
+                  <Tag size={12} /> Manage products
                 </button>
-                <AnimatePresence>
-                  {manage === v.id && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                      <VendorProducts vendor={v} inventory={inventory.data ?? []} onChange={() => vendors.refetch()} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </motion.div>
             ))}
           </motion.div>
@@ -150,6 +143,30 @@ export function Vendors() {
                 <Button variant="ghost" onClick={() => navigator.clipboard?.writeText(viewPO.emailBody ?? '')}>Copy email</Button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Product-management slide-in drawer */}
+      <AnimatePresence>
+        {manageVendor && (
+          <motion.div className="fixed inset-0 z-50 flex justify-end bg-black/50" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setManageVendor(null)}>
+            <motion.aside
+              className="glass glass-strong h-full w-full max-w-md overflow-y-auto p-5"
+              initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+              transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-1 flex items-start justify-between">
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-bold">{manageVendor.name}</h3>
+                  <p className="truncate text-xs text-muted">{manageVendor.email}</p>
+                  <div className="mt-1"><Badge tone={REL_TONE[manageVendor.relationship] ?? 'neutral'}>{REL_LABEL[manageVendor.relationship] ?? 'Regional'}</Badge></div>
+                </div>
+                <button onClick={() => setManageVendor(null)} className="text-muted hover:text-text"><X size={18} /></button>
+              </div>
+              <VendorProducts vendor={manageVendor} inventory={inventory.data ?? []} onChange={() => vendors.refetch()} />
+            </motion.aside>
           </motion.div>
         )}
       </AnimatePresence>
@@ -210,52 +227,63 @@ function VendorProducts({ vendor, inventory, onChange }: { vendor: Vendor; inven
   const options = inventory.filter((i) => !taken.has(i.id));
 
   return (
-    <div className="mt-2 space-y-3 rounded-lg glass-inset border border-transparent p-2.5">
-      {/* Existing products with delete */}
-      {list.length > 0 && (
-        <ul className="space-y-1">
-          {list.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-2 text-xs">
-              <span className="min-w-0 truncate">{p.ingredientName}{p.packLabel ? ` · ${p.packLabel}` : ''}</span>
-              <span className="flex items-center gap-2">
-                <span className="font-semibold">{money(p.pricePerPack)}/pack</span>
-                <button onClick={() => removeProduct(p.ingredientId)} title="Remove product" className="text-muted hover:text-danger"><Trash2 size={13} /></button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="mt-4 space-y-5">
+      {/* Current products */}
+      <div>
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Products this vendor sells</div>
+        {list.length === 0 ? (
+          <p className="rounded-lg glass-inset border border-transparent px-3 py-3 text-sm text-muted">No products yet. Pick ingredients below and set a price per pack.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {list.map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-3 rounded-lg glass-inset border border-transparent px-3 py-2 text-sm">
+                <span className="min-w-0">
+                  <span className="font-medium">{p.ingredientName}</span>
+                  {p.packLabel ? <span className="text-muted"> · {p.packLabel}</span> : null}
+                </span>
+                <span className="flex items-center gap-3">
+                  <span className="font-semibold">{money(p.pricePerPack)}/pack</span>
+                  <button onClick={() => removeProduct(p.ingredientId)} title="Remove product" className="text-muted hover:text-danger"><Trash2 size={15} /></button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
-      {/* Checkbox multi-select of remaining ingredients */}
+      {/* Add new products via checkboxes */}
       {options.length === 0 ? (
-        <p className="text-xs text-muted">All ingredients are priced for this vendor.</p>
+        <p className="text-sm text-muted">Every ingredient is already priced for this vendor.</p>
       ) : (
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Add ingredients this vendor sells</div>
-          <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+        <div>
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Add ingredients this vendor sells</div>
+          <div className="space-y-1 rounded-lg glass-inset border border-transparent p-2">
             {options.map((i) => {
               const checked = i.id in picked;
               return (
-                <div key={i.id} className="flex items-center gap-2">
-                  <label className="flex min-w-0 flex-1 items-center gap-2 text-xs">
+                <div key={i.id} className={`flex items-center gap-3 rounded-md px-2 py-1.5 ${checked ? 'bg-brand/8' : ''}`}>
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-sm">
                     <input type="checkbox" checked={checked} onChange={() => toggle(i.id)}
-                      className="h-3.5 w-3.5 accent-[var(--brand,#6366f1)]" />
-                    <span className="truncate">{i.name}{i.packLabel ? ` (${i.packLabel})` : ''}</span>
+                      className="h-4 w-4 accent-[var(--brand,#6366f1)]" />
+                    <span className="min-w-0">
+                      <span className="font-medium">{i.name}</span>
+                      {i.packLabel ? <span className="text-muted"> ({i.packLabel})</span> : null}
+                    </span>
                   </label>
                   {checked && (
                     <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="$/pack" value={picked[i.id]}
                       onChange={(e) => setPrice(i.id, e.target.value)} autoFocus
-                      className="w-24 rounded-md glass-inset border border-transparent px-2 py-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
+                      className="w-28 rounded-md glass-inset border border-transparent px-2.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
                   )}
                 </div>
               );
             })}
           </div>
           {anyChecked && (
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-[11px] text-muted">{rows.length}/{Object.keys(picked).length} priced</span>
-              <Button variant="ghost" onClick={saveAll} disabled={saving || !allPriced}>
-                <Plus size={13} /> {saving ? 'Saving…' : `Save ${rows.length || ''}`.trim()}
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-xs text-muted">{rows.length} of {Object.keys(picked).length} selected have a price</span>
+              <Button onClick={saveAll} disabled={saving || !allPriced}>
+                <Plus size={14} /> {saving ? 'Saving…' : `Save ${rows.length || ''}`.trim()}
               </Button>
             </div>
           )}
