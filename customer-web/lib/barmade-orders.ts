@@ -29,15 +29,19 @@ interface Meta {
 // Fallback when Firestore isn't configured (local dev against the API only).
 const memoryMeta = new Map<string, Meta>();
 
+// Meta never changes after creation, so it is cached in memory (saves a Firestore read per poll).
 async function saveMeta(m: Meta) {
+  memoryMeta.set(m.id, m);
   if (firestoreConfigured()) await firestore().collection(META).doc(m.id).set(m);
-  else memoryMeta.set(m.id, m);
 }
 
 async function loadMeta(id: string): Promise<Meta | null> {
-  if (!firestoreConfigured()) return memoryMeta.get(id) ?? null;
+  const cached = memoryMeta.get(id);
+  if (cached || !firestoreConfigured()) return cached ?? null;
   const snap = await firestore().collection(META).doc(id).get();
-  return snap.exists ? (snap.data() as Meta) : null;
+  const meta = snap.exists ? (snap.data() as Meta) : null;
+  if (meta) memoryMeta.set(id, meta);
+  return meta;
 }
 
 export interface BarmadeOrderInput {
