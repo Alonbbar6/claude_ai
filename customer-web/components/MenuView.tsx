@@ -10,6 +10,7 @@ import { CloseButton, DishImage, Sheet, Stepper } from "./ui";
 import { CATEGORY_LABELS } from "@/lib/content";
 import { Gate } from "./Gate";
 import { ForYou } from "./ForYou";
+import { VOICE_ENABLED, VoiceAssistant } from "./VoiceAssistant";
 
 export function MenuView({
   restaurant,
@@ -158,6 +159,7 @@ export function MenuView({
 
       <DishSheet dish={openDish} canOrder={canOrder} onClose={closeDish} />
       {canOrder && <CartBar onOpen={() => setCartOpen(true)} />}
+      {canOrder && VOICE_ENABLED && <VoiceAssistant />}
       {canOrder && <CartSheet open={cartOpen} onClose={closeCart} restaurantName={restaurant.name} />}
     </Gate>
   );
