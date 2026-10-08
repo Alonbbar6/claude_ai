@@ -312,3 +312,160 @@ function trendOf(series: number[]): string {
   if (second < first * 0.8) return 'falling';
   return 'steady';
 }
+
+// ------------------------------------------------------------------
+// Vendor purchase-order email (AI-phrased, relationship-aware voice).
+// The model only phrases language around facts we give it (vendor name, line
+// items, totals). It must never invent prices, quantities or terms. The TONE
+// is chosen by the vendor's relationship so a corner grocer and a national
+// distributor don't get the same boilerplate.
+// ------------------------------------------------------------------
+
+export type VendorRelationship = 'local' | 'regional' | 'corporate';
+
+export interface VendorEmailItem {
+  ingredientName: string;
+  packs: number;
+  packSize: number;
+  unit: string;
+  pricePerPack: number;
+  lineTotal: number;
+}
+
+export interface VendorEmailContext {
+  restaurantName: string;
+  vendorName: string;
+  relationship: VendorRelationship;
+  items: VendorEmailItem[];
+  total: number;
+}
+
+export interface VendorEmailResult {
+  subject: string;
+  body: string;
+  model: string;
+}
+
+const VOICE_GUIDE: Record<VendorRelationship, string> = {
+  local:
+    'This is a small LOCAL supplier the manager knows personally. Write warm, first-name, neighbourly — a short friendly greeting, plain language, a human sign-off. No corporate jargon, no PO/reference numbers, no legalese. 2-4 short sentences around the order.',
+  regional:
+    'This is a REGIONAL supplier with a solid ongoing working relationship. Write professional but friendly and direct — courteous greeting, clear request, a brief thanks. Neither chummy nor stiff.',
+  corporate:
+    'This is a large CORPORATE distributor. Write formal B2B procurement language — structured, concise, references a standing supply agreement and requests confirmation of availability, lead time and delivery window. Impersonal and precise.',
+};
+
+const VENDOR_EMAIL_PROMPT = `You write a restaurant's purchase-order email to a supplier.
+You are given the restaurant name, the supplier name, the supplier RELATIONSHIP, the exact line items (ingredient, packs, pack size, unit, price per pack, line total) and the order total.
+Rules:
+- Use ONLY the facts provided. Never invent, change, add or drop items, prices, quantities or totals.
+- Match the VOICE exactly to the relationship guidance given.
+- Include the itemised list (one line per item with its packs and price) and the order total somewhere in the body.
+- Ask the supplier to confirm availability and a delivery window.
+Return ONLY valid JSON (no markdown, no prose outside the JSON) of shape:
+{"subject":"...","body":"..."}
+The body may contain \\n newlines.`;
+
+/** Build the PO email in the vendor's relationship voice. Falls back to a
+ *  deterministic per-relationship template when no API key / model fails. */
+export async function generateVendorOrderEmail(ctx: VendorEmailContext): Promise<VendorEmailResult> {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (apiKey) {
+    const facts = {
+      restaurantName: ctx.restaurantName,
+      vendorName: ctx.vendorName,
+      relationship: ctx.relationship,
+      items: ctx.items.map((i) => ({
+        ingredient: i.ingredientName,
+        packs: i.packs,
+        packSize: i.packSize,
+        unit: i.unit,
+        pricePerPack: i.pricePerPack,
+        lineTotal: i.lineTotal,
+      })),
+      orderTotal: ctx.total,
+    };
+    const userContent = `VOICE GUIDANCE: ${VOICE_GUIDE[ctx.relationship]}\n\nFACTS (JSON):\n${JSON.stringify(facts, null, 2)}`;
+    const r = await callOpenRouter(apiKey, VENDOR_EMAIL_PROMPT, userContent, 0.6);
+    if (r) {
+      const parsed = safeParseEmail(r.text);
+      if (parsed && parsed.subject && parsed.body) {
+        return { subject: parsed.subject, body: parsed.body, model: r.model };
+      }
+    }
+  }
+  const fb = deterministicVendorEmail(ctx);
+  return { ...fb, model: 'deterministic-fallback' };
+}
+
+function safeParseEmail(text: string): { subject: string; body: string } | null {
+  try {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1) return null;
+    const obj = JSON.parse(text.slice(start, end + 1));
+    if (obj && typeof obj.subject === 'string' && typeof obj.body === 'string') {
+      return { subject: obj.subject, body: obj.body };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Per-relationship deterministic templates so the demo always produces a
+ *  tone-appropriate email even with no LLM available. */
+function deterministicVendorEmail(ctx: VendorEmailContext): { subject: string; body: string } {
+  const lines = ctx.items
+    .map((i) => `  • ${i.ingredientName}: ${i.packs} pack${i.packs === 1 ? '' : 's'} (${i.packSize} ${i.unit} each) @ $${i.pricePerPack.toFixed(2)} = $${i.lineTotal.toFixed(2)}`)
+    .join('\n');
+  const total = `$${ctx.total.toFixed(2)}`;
+  if (ctx.relationship === 'local') {
+    return {
+      subject: `Quick order from ${ctx.restaurantName} 🙂`,
+      body: `Hi ${ctx.vendorName},
+
+Hope you're doing well! Could we grab the following when you get a chance?
+
+${lines}
+
+That comes to ${total}. Let me know if everything's in stock and roughly when you could get it over to us.
+
+Thanks so much,
+${ctx.restaurantName}`,
+    };
+  }
+  if (ctx.relationship === 'corporate') {
+    return {
+      subject: `Purchase Order — ${ctx.restaurantName} (${ctx.items.length} line items)`,
+      body: `Dear ${ctx.vendorName} Accounts Team,
+
+Please find our purchase order below, submitted under our existing supply agreement:
+
+${lines}
+
+Order total: ${total}
+
+Kindly confirm product availability, unit pricing, lead time and the earliest delivery window. Please reference ${ctx.restaurantName} on all shipping and invoicing documents.
+
+Regards,
+Procurement — ${ctx.restaurantName}`,
+    };
+  }
+  // regional (default)
+  return {
+    subject: `Purchase order — ${ctx.restaurantName} (${ctx.items.length} items)`,
+    body: `Hello ${ctx.vendorName},
+
+Please supply the following for ${ctx.restaurantName}:
+
+${lines}
+
+Order total: ${total}
+
+Kindly confirm availability and your delivery window.
+
+Thank you,
+${ctx.restaurantName} — Manager`,
+  };
+}

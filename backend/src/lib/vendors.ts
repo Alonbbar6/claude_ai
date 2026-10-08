@@ -134,9 +134,12 @@ export async function listVendors() {
   const vendors = await prisma.vendor.findMany({ orderBy: { name: 'asc' }, include: { products: true } });
   return vendors.map((v) => ({ ...v, productCount: v.products.length }));
 }
-export async function addVendor(data: { name: string; email: string; phone?: string; notes?: string }) {
+export async function addVendor(data: { name: string; email: string; phone?: string; notes?: string; relationship?: string }) {
   if (!data.name || !data.email) throw new HttpError(400, 'name and email required');
-  return prisma.vendor.create({ data });
+  const relationship = ['local', 'regional', 'corporate'].includes(String(data.relationship))
+    ? String(data.relationship)
+    : 'regional';
+  return prisma.vendor.create({ data: { name: data.name, email: data.email, phone: data.phone, notes: data.notes, relationship } });
 }
 export async function removeVendor(id: string) {
   await prisma.vendor.delete({ where: { id } });
@@ -201,7 +204,14 @@ export async function placeOrderWithVendor(vendorId: string) {
     };
   });
   const total = round(items.reduce((s, i) => s + i.lineTotal, 0));
-  const { subject, body } = buildOrderEmail(vendor.name, items, total);
+  const { generateVendorOrderEmail } = await import('./ai.js');
+  const { subject, body } = await generateVendorOrderEmail({
+    restaurantName: RESTAURANT_NAME,
+    vendorName: vendor.name,
+    relationship: (['local', 'regional', 'corporate'].includes(vendor.relationship) ? vendor.relationship : 'regional') as 'local' | 'regional' | 'corporate',
+    items: items.map((i) => ({ ingredientName: i.ingredientName, packs: i.packs, packSize: i.packSize, unit: i.unit, pricePerPack: i.pricePerPack, lineTotal: i.lineTotal })),
+    total,
+  });
 
   const po = await prisma.purchaseOrder.create({
     data: {
@@ -215,23 +225,8 @@ export async function placeOrderWithVendor(vendorId: string) {
   return po;
 }
 
-function buildOrderEmail(vendorName: string, items: { ingredientName: string; packs: number; unit: string; pricePerPack: number; lineTotal: number; packSize: number }[], total: number) {
-  const subject = `Purchase order — Bella Nonna (${items.length} items)`;
-  const lines = items.map((i) => `  • ${i.ingredientName}: ${i.packs} pack${i.packs === 1 ? '' : 's'} (${i.packSize} ${i.unit} each) @ $${i.pricePerPack.toFixed(2)} = $${i.lineTotal.toFixed(2)}`).join('\n');
-  const body = `Hello ${vendorName},
-
-Please supply the following for Bella Nonna:
-
-${lines}
-
-Order total: $${total.toFixed(2)}
-
-Kindly confirm availability and delivery window.
-
-Thank you,
-Bella Nonna — Manager`;
-  return { subject, body };
-}
+// Restaurant display name used in vendor-facing emails.
+const RESTAURANT_NAME = 'Trattoria Little Italy';
 
 export async function listPurchaseOrders() {
   return prisma.purchaseOrder.findMany({ orderBy: { createdAt: 'desc' }, include: { items: true } });

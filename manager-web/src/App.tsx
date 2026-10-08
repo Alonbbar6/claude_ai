@@ -126,7 +126,7 @@ export default function App() {
         <header className="glass sticky top-0 z-20 flex items-center justify-between rounded-none border-x-0 border-t-0 px-6 py-4">
           <div>
             <h1 className="text-xl font-bold capitalize">{NAV.find((n) => n.id === tab)?.label}</h1>
-            <p className="text-sm text-muted">Bella Nonna · fictional Italian restaurant · synthetic demo</p>
+            <p className="text-sm text-muted">Trattoria Little Italy · synthetic demo</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={simulateRush} disabled={rushing}>

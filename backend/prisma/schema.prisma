@@ -98,6 +98,9 @@ model Vendor {
   email     String
   phone     String?
   notes     String?
+  // Drives the AI voice of the purchase-order email:
+  // local = warm/personal, regional = professional-friendly, corporate = formal/procurement.
+  relationship String @default("regional") // local | regional | corporate
   createdAt DateTime @default(now())
   products  VendorProduct[]
   orders    PurchaseOrder[]
