@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { TRATTORIA_ID } from "@/lib/content";
+import { VOICE_ENABLED, VoiceAssistant } from "./VoiceAssistant";
 import type { Localized } from "@/lib/content";
 import type { ViewDish, ViewRestaurant } from "@/lib/types";
 import { useApp } from "./AppProvider";
@@ -9,37 +11,19 @@ import { DemoFooter, Header } from "./Header";
 import { Gate } from "./Gate";
 import { DishImage } from "./ui";
 
-interface ActiveOrder {
-  id: string;
-  order_number: number;
-  status: string;
-}
-
 export function Home({
   restaurants,
   special,
+  dishes,
 }: {
   restaurants: ViewRestaurant[];
   special: { dish: ViewDish; reason: Localized } | null;
   dishes: ViewDish[];
 }) {
-  const { t, L, price, customer, activeOrderId, setActiveOrderId } = useApp();
-  const [active, setActive] = useState<ActiveOrder | null>(null);
+  const { t, L, price, customer } = useApp();
+  const router = useRouter();
   const open = restaurants.filter((r) => r.acceptsOrders);
   const closed = restaurants.filter((r) => !r.acceptsOrders);
-
-  useEffect(() => {
-    if (!activeOrderId) return setActive(null);
-    fetch(`/api/orders/${activeOrderId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((o) => {
-        if (!o || o.status === "COMPLETED" || o.status === "CANCELLED") {
-          setActive(null);
-          if (!o || o.status === "COMPLETED" || o.status === "CANCELLED") setActiveOrderId(null);
-        } else setActive(o);
-      })
-      .catch(() => {});
-  }, [activeOrderId, setActiveOrderId]);
 
   return (
     <Gate>
@@ -48,24 +32,6 @@ export function Home({
         <h1 className="text-3xl font-black text-night">{t("home.hi", { name: customer?.name ?? "" })} 👋</h1>
         <p className="text-ink-soft">{t("home.subtitle")}</p>
 
-        {active && (
-          <Link
-            href={`/order/${active.id}`}
-            className="mt-4 flex items-center justify-between rounded-2xl bg-night px-4 py-3 text-white shadow-card"
-          >
-            <span className="flex items-center gap-2 font-semibold">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-gold" />
-              </span>
-              {t("home.activeOrder", {
-                n: active.order_number,
-                status: t(`order.status.${active.status}` as never).toLowerCase(),
-              })}
-            </span>
-            <span className="font-bold text-gold">{t("home.track")} →</span>
-          </Link>
-        )}
 
         {open.map((r) => (
           <Link
@@ -133,6 +99,20 @@ export function Home({
         </section>
         <DemoFooter />
       </main>
+      {/* Voice from the start: "where can I eat sushi?" / "a Margherita to go" */}
+      {VOICE_ENABLED && (
+        <VoiceAssistant
+          dishes={dishes}
+          hint={t("voice.homeHint")}
+          onOpenDish={(d) => router.push(`/r/${TRATTORIA_ID}?dish=${d.id}`)}
+          onReviewCart={(p) => {
+            const q = new URLSearchParams({ cart: "open" });
+            if (p.fulfillment) q.set("fulfillment", p.fulfillment);
+            if (p.table) q.set("table", p.table);
+            router.push(`/r/${TRATTORIA_ID}?${q}`);
+          }}
+        />
+      )}
     </Gate>
   );
 }
