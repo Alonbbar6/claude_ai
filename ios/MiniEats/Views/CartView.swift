@@ -1,167 +1,197 @@
 import SwiftUI
 
+/// Review the order, choose to go / for here, and send it to the kitchen.
 struct CartView: View {
-    @Environment(AppStore.self) private var store
+    @Environment(CustomerStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var fulfillment: Fulfillment = .pickup
-    @State private var mode: TravelMode = .driving
-    @State private var raining = false
-    @State private var quote: EtaQuote?
-    @State private var pickupPlan: PickupPlan?
+    @State private var fulfillment = "to_go"
+    @State private var table = ""
     @State private var placing = false
     @State private var error: String?
 
     var body: some View {
         NavigationStack {
-            List {
-                if let restaurant = store.cartRestaurant {
-                    Section(restaurant.name) {
-                        ForEach(store.cartLines) { line in
+            Group {
+                if store.cartLines.isEmpty {
+                    ContentUnavailableView("Your order is empty", systemImage: "bag")
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            Text(store.restaurant.name).foregroundStyle(.secondary)
+                            VStack(spacing: 12) {
+                                ForEach(store.cartLines, id: \.dish.id) { line in
+                                    HStack(spacing: 12) {
+                                        DishImage(url: line.dish.imageURL, size: 56)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(line.dish.name).fontWeight(.bold).foregroundStyle(Color.night)
+                                            Text(Format.money(line.dish.price * Double(line.quantity)))
+                                                .font(.subheadline.bold()).foregroundStyle(Color.goldText)
+                                        }
+                                        Spacer()
+                                        QuantityStepper(
+                                            value: Binding(
+                                                get: { line.quantity },
+                                                set: { store.setQuantity($0, of: line.dish.id) }),
+                                            range: 0...max(1, min(20, line.dish.servingsLeft)))
+                                    }
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("How do you want it?").font(.headline)
+                                HStack(spacing: 12) {
+                                    fulfillmentCard("to_go", icon: "🥡", title: "To go", hint: "Packed to take away")
+                                    fulfillmentCard("for_here", icon: "🍽️", title: "For here", hint: "Served on a plate")
+                                }
+                                if fulfillment == "for_here" {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Table number (optional)").font(.subheadline.weight(.semibold)).foregroundStyle(Color.inkSoft)
+                                        TextField("", text: $table)
+                                            .keyboardType(.numbersAndPunctuation)
+                                            .onChange(of: table) { _, v in
+                                                table = String(v.filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(8))
+                                            }
+                                            .padding(12)
+                                            .background(Color.cream, in: RoundedRectangle(cornerRadius: 12))
+                                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.line))
+                                            .accessibilityIdentifier("table-field")
+                                    }
+                                }
+                            }
+
+                            pickupTiming
+
+                            Divider()
                             HStack {
-                                Text("\(line.quantity)×").foregroundStyle(.secondary).monospacedDigit()
-                                Text(line.item.name)
+                                Text("Total").font(.title3.weight(.black))
                                 Spacer()
-                                Text(Format.money(line.item.price * Double(line.quantity)))
+                                Text(Format.money(store.cartTotal)).font(.title3.weight(.black))
+                            }
+                            Text(fulfillment == "to_go" ? "Pay when you pick up." : "Pay at your table.")
+                                .font(.subheadline).foregroundStyle(Color.inkSoft)
+
+                            if let error {
+                                Text(error)
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(Color.warn)
+                                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color.warnTint, in: RoundedRectangle(cornerRadius: 12))
+                                    .accessibilityIdentifier("order-error")
                             }
                         }
+                        .padding()
                     }
-
-                    Section {
-                        Picker("Fulfillment", selection: $fulfillment) {
-                            Text("Pickup").tag(Fulfillment.pickup)
-                            Text("Delivery").tag(Fulfillment.delivery)
+                    .background(Color.cream)
+                    .safeAreaInset(edge: .bottom) {
+                        Button {
+                            Task { await place() }
+                        } label: {
+                            if placing {
+                                HStack(spacing: 8) { ProgressView().tint(.night); Text("Sending to the kitchen…") }
+                            } else {
+                                Text("Place order · \(Format.money(store.cartTotal))")
+                            }
                         }
-                        .pickerStyle(.segmented)
-                        .listRowSeparator(.hidden)
-
-                        if fulfillment == .delivery {
-                            deliveryEstimate
-                        } else {
-                            pickupEstimate
-                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(placing)
+                        .padding()
+                        .background(.bar)
+                        .accessibilityIdentifier("place-order")
                     }
-
-                    Section {
-                        HStack {
-                            Text("Total").font(.headline)
-                            Spacer()
-                            Text(Format.money(store.cartTotal)).font(.headline)
-                        }
-                    }
-                } else {
-                    ContentUnavailableView("Your cart is empty", systemImage: "cart")
                 }
             }
-            .navigationTitle("Your cart")
+            .navigationTitle("Your order")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
             }
-            .safeAreaInset(edge: .bottom) {
-                if store.cartCount > 0 {
-                    Button {
-                        Task { await place() }
-                    } label: {
-                        if placing {
-                            ProgressView().tint(.white)
-                        } else {
-                            Text(fulfillment == .pickup ? "Place pickup order" : "Place order")
-                        }
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(placing || pickupPlan?.decision == "too_far" && fulfillment == .pickup)
-                    .padding()
-                    .background(.bar)
-                }
-            }
-            .onChange(of: fulfillment) { _, new in
-                if new == .pickup { store.location.start() }
-            }
             .onAppear {
                 store.location.start()
-                if let r = store.cartRestaurant { mode = store.suggestedMode(to: r) }
+                store.suggestMode()
+                Task { await store.quoteCart() }
             }
-            // Re-quote whenever a model input changes: cart size, weather,
-            // fulfillment, travel mode, or where the customer is.
-            .task(id: "\(store.cartCount)-\(raining)-\(fulfillment)-\(mode)-\(store.location.movementKey)") {
-                guard let rid = store.cartRestaurantId else { return }
-                if fulfillment == .delivery {
-                    quote = try? await store.quote(restaurantId: rid, itemCount: store.cartCount, raining: raining)
-                } else {
-                    pickupPlan = try? await store.pickupQuote(restaurantId: rid, itemCount: store.cartCount, mode: mode)
-                }
-            }
-            .alert("Couldn't place order", isPresented: .init(
-                get: { error != nil }, set: { if !$0 { error = nil } })
-            ) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(error ?? "")
-            }
+            // Re-quote when the customer moves.
+            .task(id: store.location.movementKey) { await store.quoteCart() }
         }
     }
 
-    @ViewBuilder private var deliveryEstimate: some View {
-        if let quote {
-            InfoRow(label: "Deliver to", value: quote.toCurrentLocation ? "Your current location" : "Saved address")
-            InfoRow(label: "Arrives in", value: Format.minutes(quote.etaMinutes))
-            InfoRow(label: "Distance", value: Format.km(quote.route.distanceKm))
-            InfoRow(label: "Drive time",
-                    value: "\(Format.minutes(quote.route.durationMin)) · \(quote.route.source == "google" ? "Google Maps" : "estimated")")
-            RiskBadge(risk: quote.delayRisk)
-            if let b = quote.breakdown {
-                DisclosureGroup("Where the time goes") {
-                    InfoRow(label: b.grabAndGo ? "Handover at counter" : "Kitchen", value: Format.minutes(b.kitchenMin))
-                    if let c = b.courierToRestaurantMin {
-                        InfoRow(label: "Courier reaches restaurant", value: Format.minutes(c))
+    /// When the food will be ready and when to leave, from the on-device model
+    /// and the phone's location (the old app asked the server for this).
+    @ViewBuilder private var pickupTiming: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(fulfillment == "to_go" ? "Pickup timing" : "Kitchen timing").font(.headline)
+                Spacer()
+                if fulfillment == "to_go" {
+                    Picker("Getting there", selection: Binding(
+                        get: { store.mode }, set: { m in Task { await store.setMode(m) } })
+                    ) {
+                        ForEach(TravelMode.allCases, id: \.self) { Label($0.label, systemImage: $0.icon).tag($0) }
                     }
-                    InfoRow(label: "Pickup handoff", value: Format.minutes(b.pickupHandoffMin))
-                    InfoRow(label: "Drive to you", value: Format.minutes(b.driveToYouMin))
-                    InfoRow(label: "Drop-off", value: Format.minutes(b.dropoffHandoffMin))
-                    Text(b.grabAndGo
-                         ? "No cooking needed: the courier's trip is the whole wait. Pickup would be faster if you're nearby."
-                         : "The kitchen and the courier's trip to the restaurant overlap; the longer one sets the start.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    .pickerStyle(.segmented)
+                    .frame(width: 150)
                 }
-                .font(.subheadline)
             }
-        } else {
-            ProgressView()
+            if let ready = store.cartReady {
+                InfoRow(label: "Food ready", value: "~\(Format.minutes(ready.p50)) (by \(Format.minutes(ready.p90)))")
+            }
+            if fulfillment == "to_go" {
+                if let plan = store.quote {
+                    InfoRow(label: "Your trip", value: "\(Format.km(plan.distanceKm)) · \(Format.minutes(plan.tripMin)) \(plan.verb)")
+                    // A live timer, not a clock time: it keeps counting while the cart is open.
+                    HStack {
+                        Text("Leave").foregroundStyle(.secondary)
+                        Spacer()
+                        LeaveCountdown(plan: plan, compact: true).fontWeight(.semibold)
+                        if plan.shouldWait {
+                            Text("(at \(Format.time(plan.leaveAt)))").foregroundStyle(.secondary)
+                        }
+                    }
+                    Label(plan.message, systemImage: plan.shouldWait ? "clock" : "figure.walk.departure")
+                        .font(.footnote)
+                        .foregroundStyle(plan.foodWaitMin > PickupPlanner.freshHoldMin || plan.tooFar ? Color.warn : Color.fresh)
+                } else if store.location.isDenied {
+                    Text("Turn on location in Settings to see when to leave.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Finding your location to plan when to leave…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
-        Toggle("Simulate rain", isOn: $raining)
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityIdentifier("pickup-timing")
     }
 
-    @ViewBuilder private var pickupEstimate: some View {
-        Picker("Getting there", selection: $mode) {
-            ForEach(TravelMode.allCases, id: \.self) { m in
-                Label(m.label, systemImage: m.icon).tag(m)
+    private func fulfillmentCard(_ value: String, icon: String, title: String, hint: String) -> some View {
+        let selected = fulfillment == value
+        return Button { fulfillment = value } label: {
+            VStack(spacing: 4) {
+                Text(icon).font(.largeTitle)
+                Text(title).font(.headline).foregroundStyle(Color.night)
+                Text(hint).font(.caption).foregroundStyle(Color.inkSoft)
             }
+            .frame(maxWidth: .infinity)
+            .padding(14)
+            .background(selected ? Color.goldTint : Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? Color.gold : Color.line, lineWidth: 2))
         }
-        if let plan = pickupPlan {
-            InfoRow(label: "Food ready", value: "~\(Format.time(plan.readyAt))")
-            InfoRow(label: "Your trip",
-                    value: "\(Format.km(plan.distanceKm)) · \(Format.minutes(plan.tripMin)) \(plan.mode == .driving ? "drive" : "walk")")
-            InfoRow(label: "Leave at", value: plan.shouldWait ? Format.time(plan.leaveAt) : "Now")
-            Label(plan.message, systemImage: plan.shouldWait ? "clock" : "figure.walk.departure")
-                .font(.footnote)
-                .foregroundStyle(plan.foodWaitMin > 5 || plan.decision == "too_far" ? .orange : .brand)
-        } else {
-            ProgressView()
-        }
-        if store.location.isDenied {
-            Text("Location is off, so we're using your saved address.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("fulfillment-\(value)")
     }
 
     private func place() async {
         placing = true
+        error = nil
         defer { placing = false }
         do {
-            try await store.placeOrder(raining: raining, fulfillment: fulfillment, mode: mode)
+            try await store.placeOrder(fulfillment: fulfillment, table: table)
+            dismiss()
+        } catch let e as APIError where e.status == 409 {
+            // The kitchen's stock changed under us; the menu refreshes with "Sold out".
+            error = "Sorry, some items just sold out: \(e.message)"
+            await store.load()
         } catch {
-            self.error = error.localizedDescription
+            self.error = "We couldn't place your order. \(error.localizedDescription)"
         }
     }
 }

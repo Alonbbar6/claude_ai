@@ -13,8 +13,20 @@ from app.models import (
     MenuItem,
     NotificationPreferences,
     Restaurant,
+    RestaurantGroup,
     User,
 )
+
+
+def _groups() -> list[RestaurantGroup]:
+    return [
+        RestaurantGroup(
+            id="grp_napoli",
+            name="Napoli Pizza Group",
+            owner="Giovanni Russo",
+            description="Two Napoli Pizza locations in Miami, same menu, separate kitchens.",
+        ),
+    ]
 
 
 def _restaurants() -> list[Restaurant]:
@@ -54,6 +66,7 @@ def _restaurants() -> list[Restaurant]:
             address="8 N Miami Ave, Miami, FL 33128",
             phone="305-555-0102",
             avg_prep_min=22,
+            group_id="grp_napoli",
             categories=[
                 MenuCategory(id="cat_pizza_pizzas", name="Pizzas", sort=0),
                 MenuCategory(id="cat_pizza_sides", name="Sides", sort=1),
@@ -68,6 +81,29 @@ def _restaurants() -> list[Restaurant]:
                 MenuItem(id="pizza_3", name="Garlic Knots", price=6.5, category_id="cat_pizza_sides",
                          description="Six knots with garlic butter.",
                          recipe={"ing_dough": 0.5, "ing_garlic": 0.02}),
+            ],
+        ),
+        # Second location of the same chain: same dishes, its own kitchen and stock.
+        Restaurant(
+            id="rest_pizza_wynwood",
+            name="Napoli Pizza Wynwood",
+            cuisine="Italian",
+            lat=25.8010,
+            lng=-80.1990,
+            address="2520 NW 2nd Ave, Miami, FL 33127",
+            phone="305-555-0104",
+            avg_prep_min=20,
+            group_id="grp_napoli",
+            categories=[
+                MenuCategory(id="cat_wyn_pizzas", name="Pizzas", sort=0),
+            ],
+            menu=[
+                MenuItem(id="wyn_1", name="Margherita", price=13.0, category_id="cat_wyn_pizzas",
+                         description="Tomato, mozzarella, basil.",
+                         recipe={"ing_w_dough": 1, "ing_w_mozz": 0.15, "ing_w_sauce": 0.1}),
+                MenuItem(id="wyn_2", name="Pepperoni", price=15.0, category_id="cat_wyn_pizzas",
+                         description="Tomato, mozzarella, pepperoni.",
+                         recipe={"ing_w_dough": 1, "ing_w_mozz": 0.15, "ing_w_sauce": 0.1, "ing_w_pepperoni": 0.06}),
             ],
         ),
         Restaurant(
@@ -116,6 +152,10 @@ def _ingredients() -> list[Ingredient]:
         ing("ing_sauce", "rest_pizza", "Tomato sauce", "L", 6, 1.5, 8, 4),
         ing("ing_pepperoni", "rest_pizza", "Pepperoni", "kg", 0.15, 0.5, 2, 1),  # 2 pizzas left
         ing("ing_garlic", "rest_pizza", "Garlic butter", "kg", 1, 0.2, 1.5, 0.4),
+        ing("ing_w_dough", "rest_pizza_wynwood", "Dough balls", "each", 25, 10, 60, 40),
+        ing("ing_w_mozz", "rest_pizza_wynwood", "Mozzarella", "kg", 6, 2, 10, 5),
+        ing("ing_w_sauce", "rest_pizza_wynwood", "Tomato sauce", "L", 5, 1.5, 8, 3.5),
+        ing("ing_w_pepperoni", "rest_pizza_wynwood", "Pepperoni", "kg", 2.4, 0.5, 2, 1),  # above par: can cover Downtown
         ing("ing_bun", "rest_burger", "Burger buns", "each", 60, 15, 80, 50),
         ing("ing_patty", "rest_burger", "Beef patties", "each", 14, 15, 80, 50),  # below threshold
         ing("ing_potato", "rest_burger", "Potatoes", "kg", 20, 5, 25, 12),
@@ -158,6 +198,7 @@ def _users() -> list[User]:
     ]
 
 
+GROUPS: dict[str, RestaurantGroup] = {}
 RESTAURANTS: dict[str, Restaurant] = {}
 COURIERS: dict[str, Courier] = {}
 USERS: dict[str, User] = {}
@@ -169,7 +210,7 @@ def seed_ingredients() -> list[Ingredient]:
 
 def reset() -> None:
     """Restore the seed data in place."""
-    for target, items in ((RESTAURANTS, _restaurants()), (COURIERS, _couriers()), (USERS, _users())):
+    for target, items in ((GROUPS, _groups()), (RESTAURANTS, _restaurants()), (COURIERS, _couriers()), (USERS, _users())):
         target.clear()
         target.update({x.id: x for x in items})
 

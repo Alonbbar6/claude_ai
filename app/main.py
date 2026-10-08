@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -16,9 +17,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app import data, qa
+from app.barmade import BARMADE_RESTAURANT_ID, BarMadeClient, BarMadeError, BarMadeSync
 from app.catalog import CatalogService, CategoryIn, CategoryUpdate, MenuItemIn, MenuItemUpdate
-from app.data import COURIERS, RESTAURANTS, USERS
+from app.data import COURIERS, GROUPS, RESTAURANTS, USERS
 from app.demand import DemandService
+from app.groups import GroupIn, GroupService, GroupUpdate
 from app.inventory import InventoryService, OutOfStock
 from app.maps import LatLng, RouteProvider, get_provider
 from app.models import CLOSED, Channel, CreateOrderRequest, Fulfillment, Ingredient, NotificationPreferences, OrderLine, TravelMode
@@ -77,7 +80,16 @@ async def lifespan(app: FastAPI):
     if os.environ.get("QA_SEED"):
         n = qa.seed(app.state.orders)
         logging.getLogger(__name__).info("QA_SEED: added %s and %d QA orders", qa.QA_RESTAURANT_ID, n)
+    app.state.barmade = None
+    if url := os.environ.get("BARMADE_API_URL"):
+        app.state.barmade = BarMadeSync(app.state.orders, app.state.bus, BarMadeClient(url))
+        # In the background: a sleeping Render instance takes ~50 s to answer.
+        import_task = asyncio.create_task(app.state.barmade.import_with_retry())
     yield
+    if app.state.barmade:
+        import_task.cancel()
+        await app.state.barmade.drain()
+        await app.state.barmade.client.aclose()
     await app.state.orders.shutdown()
 
 
@@ -94,9 +106,13 @@ async def index():
 # ---- catalogue -----------------------------------------------------------
 
 @app.get("/api/restaurants")
-async def list_restaurants():
+async def list_restaurants(group_id: str | None = None):
     # Recipes are internal to the kitchen; customers don't need them.
-    return [r.model_dump(mode="json", exclude={"menu": {"__all__": {"recipe"}}}) for r in RESTAURANTS.values()]
+    return [
+        {**r.model_dump(mode="json", exclude={"menu": {"__all__": {"recipe"}}}),
+         "group": GROUPS[r.group_id].name if r.group_id in GROUPS else None}
+        for r in RESTAURANTS.values() if group_id is None or r.group_id == group_id
+    ]
 
 
 @app.get("/api/users")
@@ -354,6 +370,17 @@ def _catalog(rid: str) -> CatalogService:
     return CatalogService(RESTAURANTS, _inventory())
 
 
+def _barmade() -> BarMadeSync | None:
+    return getattr(app.state, "barmade", None)
+
+
+def _stock_writable(rid: str) -> None:
+    """When orders go to BarMade, it owns the stock; local edits would be
+    overwritten on the next sync."""
+    if rid == BARMADE_RESTAURANT_ID and (bm := _barmade()) and bm.forward_orders:
+        raise HTTPException(409, "Stock for this restaurant is managed in BarMade")
+
+
 def _call(fn, *args):
     """Map service errors to HTTP: KeyError -> 404, ValueError -> 422."""
     try:
@@ -434,6 +461,7 @@ class IngredientUpdate(BaseModel):
 @app.post(M + "/inventory", status_code=201)
 async def add_ingredient(rid: str, req: IngredientIn):
     _catalog(rid)
+    _stock_writable(rid)
     ing = _inventory().add(Ingredient(restaurant_id=rid, **req.model_dump()))
     return _inventory().view(ing)
 
@@ -441,6 +469,7 @@ async def add_ingredient(rid: str, req: IngredientIn):
 @app.put(M + "/inventory/{ing_id}")
 async def update_ingredient(rid: str, ing_id: str, req: IngredientUpdate):
     _catalog(rid)
+    _stock_writable(rid)
     ing = _call(_inventory().update, rid, ing_id, req.model_dump(exclude_unset=True))
     return _inventory().view(ing)
 
@@ -448,6 +477,7 @@ async def update_ingredient(rid: str, ing_id: str, req: IngredientUpdate):
 @app.delete(M + "/inventory/{ing_id}", status_code=204)
 async def delete_ingredient(rid: str, ing_id: str):
     _catalog(rid)
+    _stock_writable(rid)
     _call(_inventory().delete, rid, ing_id)
 
 
@@ -460,6 +490,7 @@ class StockMove(BaseModel):
 @app.post(M + "/inventory/{ing_id}/adjust")
 async def adjust_stock(rid: str, ing_id: str, req: StockMove):
     _catalog(rid)
+    _stock_writable(rid)
     inv = _inventory()
     fn = {"restock": inv.restock, "waste": inv.waste, "count": inv.count}[req.kind]
     ing = _call(fn, rid, ing_id, req.quantity, req.note)
@@ -478,6 +509,106 @@ async def inventory_alerts(rid: str):
     _catalog(rid)
     return _inventory().alerts_for(rid)
 
+
+
+# ---- merchant: restaurant groups (chains / multi-location owners) --------------
+
+G = "/api/groups/{gid}"
+
+
+def _groups() -> GroupService:
+    return GroupService(GROUPS, RESTAURANTS, _inventory())
+
+
+@app.get("/api/groups")
+async def list_groups():
+    return _groups().list()
+
+
+@app.post("/api/groups", status_code=201)
+async def create_group(req: GroupIn):
+    return _groups().create(req)
+
+
+@app.get(G)
+async def get_group(gid: str):
+    return _call(_groups().get, gid)
+
+
+@app.put(G)
+async def update_group(gid: str, req: GroupUpdate):
+    return _call(_groups().update, gid, req.model_dump(exclude_unset=True))
+
+
+@app.delete(G, status_code=204)
+async def delete_group(gid: str):
+    _call(_groups().delete, gid)
+
+
+class GroupMember(BaseModel):
+    restaurant_id: str
+
+
+@app.post(G + "/restaurants", status_code=201)
+async def add_group_restaurant(gid: str, req: GroupMember):
+    return _call(_groups().add_restaurant, gid, req.restaurant_id)
+
+
+@app.delete(G + "/restaurants/{rid}", status_code=204)
+async def remove_group_restaurant(gid: str, rid: str):
+    _call(_groups().remove_restaurant, gid, rid)
+
+
+@app.get(G + "/inventory")
+async def group_inventory(gid: str):
+    """Stock across every location, with transfer suggestions between kitchens."""
+    return _call(_groups().inventory, gid)
+
+
+@app.get(G + "/alerts")
+async def group_alerts(gid: str):
+    return _call(_groups().alerts, gid)
+
+
+@app.get(G + "/orders")
+async def group_orders(gid: str, open_only: bool = False):
+    svc: OrderService = app.state.orders
+    orders = _call(_groups().orders, gid, svc.orders.values(), open_only)
+    return [{**svc.with_live(o).model_dump(mode="json"), "restaurant": RESTAURANTS[o.restaurant_id].name}
+            for o in orders]
+
+
+@app.get(G + "/sales")
+async def group_sales(gid: str):
+    return _call(_groups().sales, gid, app.state.orders.orders.values())
+
+
+# ---- merchant: BarMade kitchen ---------------------------------------------
+
+def _barmade_or_404() -> BarMadeSync:
+    if not (bm := _barmade()):
+        raise HTTPException(404, "BarMade is not connected (set BARMADE_API_URL)")
+    return bm
+
+
+@app.get("/api/merchant/barmade")
+async def barmade_status():
+    """Import state, last stock sync and which orders reached BarMade."""
+    return _barmade_or_404().status()
+
+
+@app.post("/api/merchant/barmade/sync")
+async def barmade_sync():
+    """Re-import if the first import failed, else pull BarMade's stock."""
+    bm = _barmade_or_404()
+    try:
+        if not bm.imported:
+            r = await bm.import_kitchen()
+            return {"imported": True, "items": len(r.menu), "changed": None}
+        return {"imported": True, "changed": await bm.sync_stock()}
+    except BarMadeError as exc:
+        bm.last_error = str(exc)
+        raise HTTPException(502, f"BarMade: {exc}")
 
 
 # ---- merchant: demand by time of day ----------------------------------------

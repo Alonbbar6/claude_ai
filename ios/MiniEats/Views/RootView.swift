@@ -1,53 +1,29 @@
 import SwiftUI
 
 struct RootView: View {
-    @Environment(AppStore.self) private var store
+    @Environment(CustomerStore.self) private var store
 
     var body: some View {
         @Bindable var store = store
-        TabView(selection: $store.selectedTab) {
-            NavigationStack { RestaurantListView() }
-                .tabItem { Label("Home", systemImage: "house.fill") }
-                .tag(AppStore.Tab.home)
-
-            NavigationStack { NearbyMapView() }
-                .tabItem { Label("Map", systemImage: "map.fill") }
-                .tag(AppStore.Tab.map)
-
-            OrdersView()
-                .tabItem { Label("Orders", systemImage: "bag.fill") }
-                .badge(store.activeOrderCount)
-                .tag(AppStore.Tab.orders)
-
-            NavigationStack { NotificationsView() }
-                .tabItem { Label("Alerts", systemImage: "bell.fill") }
-                .badge(store.unreadCount)
-                .tag(AppStore.Tab.notifications)
-
-            NavigationStack { AccountView() }
-                .tabItem { Label("Account", systemImage: "person.crop.circle") }
-                .tag(AppStore.Tab.account)
-        }
-        .tint(.brand)
-        .sheet(isPresented: $store.showCart) { CartView() }
-        .overlay(alignment: .top) {
-            if let n = store.banner {
-                NotificationBanner(notification: n)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .onTapGesture {
-                        store.banner = nil
-                        if let orderId = n.orderId {
-                            store.selectedTab = .orders
-                            store.ordersPath = [orderId]
-                        }
-                    }
+        if store.name == nil {
+            WelcomeView()
+        } else {
+            TabView(selection: $store.selectedTab) {
+                NavigationStack { MenuView() }
+                    .tabItem { Label("Menu", systemImage: "fork.knife") }
+                    .tag(CustomerStore.Tab.menu)
+                NavigationStack { NearbyMapView() }
+                    .tabItem { Label("Map", systemImage: "map.fill") }
+                    .tag(CustomerStore.Tab.map)
+                OrdersView()
+                    .tabItem { Label("Orders", systemImage: "receipt") }
+                    .badge(store.activeOrder == nil ? 0 : 1)
+                    .tag(CustomerStore.Tab.orders)
+                NavigationStack { AccountView() }
+                    .tabItem { Label("Account", systemImage: "person.crop.circle") }
+                    .tag(CustomerStore.Tab.account)
             }
-        }
-        .animation(.spring(duration: 0.35), value: store.banner?.id)
-        .task(id: store.banner?.id) {
-            guard store.banner != nil else { return }
-            try? await Task.sleep(for: .seconds(4))
-            store.banner = nil
+            .sheet(isPresented: $store.showCart) { CartView() }
         }
     }
 }

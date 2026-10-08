@@ -100,6 +100,15 @@ class MenuItem(BaseModel):
         return self.available and not self.sold_out
 
 
+class RestaurantGroup(BaseModel):
+    """A chain or owner that runs several restaurant locations. Each location
+    keeps its own menu and stock; the group is how an owner sees them together."""
+    id: str = Field(default_factory=lambda: new_id("grp"))
+    name: str
+    owner: str = ""  # person or company to contact
+    description: str = ""
+
+
 class Restaurant(BaseModel):
     id: str
     name: str
@@ -111,6 +120,7 @@ class Restaurant(BaseModel):
     categories: list[MenuCategory] = Field(default_factory=list)
     address: str = ""  # street address shown to customers and used for directions
     phone: str = ""
+    group_id: str | None = None  # RestaurantGroup this location belongs to, if any
 
 
 class LatLngPoint(BaseModel):

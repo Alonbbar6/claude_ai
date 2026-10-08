@@ -1,142 +1,150 @@
 import XCTest
 
-/// End-to-end: browse → add to cart → checkout → live tracking → notifications.
-/// Needs the backend running at http://127.0.0.1:8000.
-///
-/// Set TEST_RUNNER_SHOT_DIR=/some/dir when running xcodebuild to save
-/// screenshots of each step (simulator only).
+/// End to end against a BarMade API: name → menu → cart → order → live tracker.
+/// Runs against the local stub by default (`node scripts/barmade-stub.mjs`);
+/// set TEST_RUNNER_SERVER_URL to point elsewhere. Never run it against the
+/// team's real kitchen: every order deducts real stock.
 final class OrderFlowUITests: XCTestCase {
-    private var app: XCUIApplication!
+    // xcodebuild passes TEST_RUNNER_SERVER_URL to the runner as SERVER_URL.
+    private let server = ProcessInfo.processInfo.environment["SERVER_URL"] ?? "http://127.0.0.1:8787"
 
-    override func setUp() {
+    override func setUpWithError() throws {
         continueAfterFailure = false
-        app = XCUIApplication()
-        // Sam has quiet hours off, so every notification is delivered live.
-        let server = ProcessInfo.processInfo.environment["SERVER_URL"] ?? "http://127.0.0.1:8000"
-        app.launchArguments = ["-userId", "user_sam", "-serverURL", server]
-        app.launch()
     }
 
-    func testPlaceOrderAndTrackIt() throws {
-        let grill = app.staticTexts["Grill House"]
-        XCTAssertTrue(grill.waitForExistence(timeout: 15), "restaurants did not load — is the backend running?")
-        // ETA quotes from the ML model render next to each restaurant.
-        let etas = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH ' min'"))
-        XCTAssertTrue(etas.firstMatch.waitForExistence(timeout: 10), "no ETA quotes")
-        shot("1_home")
-
-        grill.tap()
-        let addBurger = app.buttons["Add Classic Burger"]
-        XCTAssertTrue(addBurger.waitForExistence(timeout: 5))
-        addBurger.tap()
-        addBurger.tap()
-        app.buttons["Add Fries"].tap()
-        shot("2_menu")
-
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View cart'")).firstMatch.tap()
-        app.buttons["Delivery"].tap()  // pickup is the default
-        XCTAssertTrue(app.staticTexts["Arrives in"].waitForExistence(timeout: 5), "no ETA quote in cart")
-        shot("3_cart")
-
-        app.buttons["Place order"].tap()
-        dismissNotificationPrompt()
-
-        XCTAssertTrue(app.staticTexts["Arriving in"].waitForExistence(timeout: 10), "tracking screen did not open")
-        shot("4_tracking")
-
-        // The backend advances one stage every ~4 s and pushes a notification
-        // over the WebSocket each time; wait for the courier dispatch plan.
-        XCTAssertTrue(app.staticTexts["Courier leaves"].waitForExistence(timeout: 20), "no dispatch plan")
-        sleep(1)
-        shot("5_dispatch")
-
-        // "Delivered" also appears in the timeline, so wait on the header's identifier.
-        XCTAssertTrue(app.staticTexts["delivered-header"].waitForExistence(timeout: 40), "order never delivered")
-        app.swipeUp()
-        shot("6_delivered")
-
-        app.tabBars.buttons["Alerts"].tap()
-        XCTAssertTrue(app.staticTexts["Order received"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Courier on the way to the restaurant"].firstMatch.exists)
-        XCTAssertTrue(app.staticTexts["On the way"].firstMatch.exists)
-        shot("7_alerts")
-    }
-
-    /// Pickup: the app plans when to leave from the phone's location.
-    /// Run with the simulator located near Grill House (see ios/README.md).
-    func testPickupTellsYouWhenToLeave() throws {
-        let grill = app.staticTexts["Grill House"]
-        XCTAssertTrue(grill.waitForExistence(timeout: 15), "restaurants did not load — is the backend running?")
-        grill.tap()
-        let addBurger = app.buttons["Add Classic Burger"]
-        XCTAssertTrue(addBurger.waitForExistence(timeout: 5))
-        addBurger.tap()
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View cart'")).firstMatch.tap()
-
-        app.buttons["Pickup"].tap()
-        allowLocationIfAsked()
-        XCTAssertTrue(app.staticTexts["Leave at"].waitForExistence(timeout: 10), "no pickup plan in cart")
-        sleep(1)
-        shot("p1_cart_pickup")
-
-        app.buttons["Place pickup order"].tap()
-        dismissNotificationPrompt()
-
-        // Close by: a live "Leave in m:ss" countdown, not "Leave now".
-        let countdown = app.staticTexts["leave-countdown"]
-        XCTAssertTrue(countdown.waitForExistence(timeout: 10), "no leave countdown")
-        XCTAssertTrue(app.buttons["Get directions"].exists)
-        sleep(1)
-        shot("p2_leave_countdown")
-
-        // Walking is slower, so the plan should tell you to leave sooner.
-        let before = countdown.label
-        app.buttons["Walk"].tap()
-        let changed = NSPredicate(format: "label != %@", before)
-        expectation(for: changed, evaluatedWith: countdown)
-        waitForExpectations(timeout: 10)
-        shot("p3_walking")
-
-        // Skip the kitchen ahead (demo control) until the food is ready.
-        let ready = app.staticTexts["ready-header"]
-        for _ in 0..<4 where !ready.exists {
-            app.swipeUp()
-            app.buttons["Advance"].tap()
-            app.swipeDown()
-            _ = ready.waitForExistence(timeout: 3)
+    func testPlaceOrderAndWatchTheKitchenMoveIt() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-barMadeServerURL", server, "-uiTestReset"]
+        // Location / notification permission sheets: allow and carry on.
+        addUIInterruptionMonitor(withDescription: "permissions") { alert in
+            for title in ["Allow While Using App", "Allow Once", "Allow"] where alert.buttons[title].exists {
+                alert.buttons[title].tap()
+                return true
+            }
+            return false
         }
-        XCTAssertTrue(ready.waitForExistence(timeout: 5), "food never became ready")
-        shot("p4_ready")
+        app.launch()
 
-        app.buttons["I've picked it up"].tap()
-        XCTAssertTrue(app.staticTexts["collected-header"].waitForExistence(timeout: 5))
-        shot("p5_collected")
+        // Welcome: name only.
+        let name = app.textFields["name-field"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        name.tap()
+        name.typeText("Alonso")
+        shot(app, "1-welcome")
+        app.buttons["Start ordering →"].tap()
 
-        app.tabBars.buttons["Alerts"].tap()
-        XCTAssertTrue(app.staticTexts["Ready for pickup"].firstMatch.waitForExistence(timeout: 15))
-        shot("p6_alerts")
-    }
+        // Menu from the kitchen: open a dish with plenty of stock (Coca-Cola, last in the list), add two.
+        let first = app.buttons["dish-MENU-001"]
+        XCTAssertTrue(first.waitForExistence(timeout: 70), "menu did not load from \(server)")
+        shot(app, "2-menu")
 
-    private func allowLocationIfAsked() {
+        // Map tab: you, the restaurant and the trip.
+        app.tabBars.buttons["Map"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["trip-card"].waitForExistence(timeout: 10))
+        sleep(4)  // routing + map tiles
+        shot(app, "2a-map")
+        app.tabBars.buttons["Menu"].tap()
+        app.swipeUp()
+        let dish = app.buttons["dish-MENU-005"]
+        XCTAssertTrue(dish.waitForExistence(timeout: 5))
+        dish.tap()
+        let add = app.buttons["add-to-order"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        app.buttons["plus"].firstMatch.tap()  // quantity 2
+        shot(app, "2b-dish")
+        add.tap()
+        let view = app.buttons["view-order"]
+        XCTAssertTrue(view.waitForExistence(timeout: 5))
+        view.tap()
+
+        // Cart: for here, table 7.
+        let forHere = app.descendants(matching: .any).matching(identifier: "fulfillment-for_here").firstMatch
+        XCTAssertTrue(forHere.waitForExistence(timeout: 5))
+        forHere.tap()
+        let table = app.textFields["table-field"]
+        XCTAssertTrue(table.waitForExistence(timeout: 3))
+        table.tap()
+        table.typeText("7")
+        shot(app, "3-cart")
+        app.buttons["place-order"].tap()
+
+        // Tracker: the kitchen has it.
+        let number = app.staticTexts["order-number"]
+        XCTAssertTrue(number.waitForExistence(timeout: 20), "order was not placed")
+        // The first order asks for notification permission (system sheet).
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let allow = springboard.buttons["Allow While Using App"]
-        if allow.waitForExistence(timeout: 3) { allow.tap() }
+        if springboard.buttons["Allow"].waitForExistence(timeout: 3) { springboard.buttons["Allow"].tap() }
+        XCTAssertTrue(app.staticTexts["The kitchen has your order"].waitForExistence(timeout: 5))
+        // With a location fix, the planner says when to leave (a drink is ready in ~2 min: leave now).
+        XCTAssertTrue(app.staticTexts["leave-now"].waitForExistence(timeout: 20)
+                      || app.staticTexts["leave-countdown"].exists, "no pickup plan shown")
+        XCTAssertTrue(app.otherElements["tracking-map"].exists || app.maps.firstMatch.exists)
+        shot(app, "4-received")
+
+        // The kitchen (any client of the API, here the test itself) moves it; the phone follows.
+        let order = try newestOrder()
+        XCTAssertEqual(order["customerName"] as? String, "Alonso")
+        XCTAssertEqual(order["fulfillment"] as? String, "for_here")
+        XCTAssertEqual(order["tableNumber"] as? String, "7")
+        XCTAssertEqual(order["source"] as? String, "barmade-ios")
+        let id = order["id"] as! String
+
+        try setStatus(id, "PREPARING")
+        XCTAssertTrue(app.staticTexts["They're cooking it now"].waitForExistence(timeout: 10))
+        try setStatus(id, "READY")
+        XCTAssertTrue(app.staticTexts["Ready! It's on its way to your table"].waitForExistence(timeout: 10))
+        shot(app, "5-ready")
+        try setStatus(id, "COMPLETED")
+        XCTAssertTrue(app.staticTexts["Enjoy your meal"].waitForExistence(timeout: 10))
+        shot(app, "6-completed")
+
+        // Orders tab lists it.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["Picked up"].waitForExistence(timeout: 5))
     }
 
-    private func dismissNotificationPrompt() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let allow = springboard.buttons["Allow"]
-        if allow.waitForExistence(timeout: 3) { allow.tap() }
+    // MARK: - Talking to the kitchen API from the test
+
+    private func newestOrder() throws -> [String: Any] {
+        let data = try request("GET", "/api/orders")
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let orders = json["data"] as! [[String: Any]]
+        // Newest first on the stub and the real API.
+        return orders.first!
     }
 
-    private func shot(_ name: String) {
-        let png = XCUIScreen.main.screenshot().pngRepresentation
-        let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
-        attachment.name = name
+    private func setStatus(_ id: String, _ status: String) throws {
+        _ = try request("PATCH", "/api/orders/\(id)/status", body: ["status": status])
+    }
+
+    private func request(_ method: String, _ path: String, body: [String: Any]? = nil) throws -> Data {
+        var req = URLRequest(url: URL(string: server + path)!)
+        req.httpMethod = method
+        if let body {
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        var result: Data?
+        var failure: Error?
+        let done = expectation(description: method + path)
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error { failure = error }
+            else if let code = (response as? HTTPURLResponse)?.statusCode, code >= 300 { failure = NSError(domain: "http", code: code) }
+            else { result = data }
+            done.fulfill()
+        }.resume()
+        wait(for: [done], timeout: 70)
+        if let failure { throw failure }
+        return result ?? Data()
+    }
+
+    private func shot(_ app: XCUIApplication, _ name: String) {
+        let image = app.screenshot().pngRepresentation
+        let attachment = XCTAttachment(uniformTypeIdentifier: "public.png", name: "\(name).png", payload: image, userInfo: nil)
         attachment.lifetime = .keepAlways
         add(attachment)
-        if let dir = ProcessInfo.processInfo.environment["SHOT_DIR"] {
-            try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+        if let dir = ProcessInfo.processInfo.environment["SHOT_DIR"] {  // TEST_RUNNER_SHOT_DIR on the command line
+            try? image.write(to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
         }
     }
 }

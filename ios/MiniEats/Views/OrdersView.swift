@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct OrdersView: View {
-    @Environment(AppStore.self) private var store
+    @Environment(CustomerStore.self) private var store
 
     var body: some View {
         @Bindable var store = store
@@ -9,8 +9,8 @@ struct OrdersView: View {
             Group {
                 if store.orders.isEmpty {
                     ContentUnavailableView(
-                        "No orders yet", systemImage: "bag",
-                        description: Text("Pick a restaurant on Home to place one."))
+                        "No orders yet", systemImage: "receipt",
+                        description: Text("Add something from the menu to place one."))
                 } else {
                     List(store.orders) { order in
                         NavigationLink(value: order.id) { OrderRow(order: order) }
@@ -19,34 +19,36 @@ struct OrdersView: View {
                 }
             }
             .navigationTitle("Orders")
-            .navigationDestination(for: String.self) { OrderDetailView(orderId: $0) }
+            .navigationDestination(for: String.self) { OrderTrackerView(orderId: $0) }
             .refreshable { await store.refreshOrders() }
         }
     }
 }
 
 private struct OrderRow: View {
-    let order: Order
-    @Environment(AppStore.self) private var store
+    @Environment(CustomerStore.self) private var store
+    let order: BarMadeOrder
 
     var body: some View {
-        HStack(spacing: 14) {
-            CuisineIcon(cuisine: store.restaurant(order.restaurantId)?.cuisine ?? "", size: 44)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(store.restaurant(order.restaurantId)?.name ?? "Order").font(.headline)
-                Text(order.status.title).font(.subheadline)
-                    .foregroundStyle(order.status.isClosed ? Color.secondary : Color.brand)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(order.displayNumber).font(.headline)
+                Badge(text: orderStatusTitle(order.status), color: orderStatusColor(order.status))
+                Spacer()
+                Text(Format.money(order.total)).font(.subheadline.monospacedDigit())
             }
-            Spacer()
-            if order.isPickup, let plan = order.pickup, !order.status.isClosed, order.status != .ready {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Pickup").font(.caption).foregroundStyle(.secondary)
-                    Text(plan.shouldWait ? "Leave \(Format.time(plan.leaveAt))" : "Leave now")
-                        .font(.subheadline.bold())
-                }
-            } else if let eta = order.currentEta, !order.status.isClosed {
-                Text(Format.minutes(eta.etaMinutes)).font(.subheadline.bold())
+            // The leave timer while the kitchen still has the order.
+            if order.isOpen, order.status != "READY", let plan = store.plans[order.id] {
+                LeaveCountdown(plan: plan, compact: true)
+                    .font(.subheadline.weight(.bold)).foregroundStyle(Color.goldText)
             }
+            Text(order.items.map { "\($0.quantity)× \($0.name)" }.joined(separator: ", "))
+                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            HStack(spacing: 6) {
+                if let f = fulfillmentLabel(order.fulfillment, table: order.tableNumber) { Text(f).bold() }
+                Text(Format.dateTime(order.createdAt))
+            }
+            .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }

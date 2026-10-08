@@ -102,6 +102,6 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Keep the last known fix; the backend falls back to the profile address.
+        // Keep the last known fix.
     }
 }
