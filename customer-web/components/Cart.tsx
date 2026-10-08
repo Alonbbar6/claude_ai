@@ -51,6 +51,11 @@ export function CartSheet({
   const [table, setTable] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set once the order is placed, so the emptied cart doesn't flash "Your order is empty" while we navigate.
+  const [placed, setPlaced] = useState(false);
+  useEffect(() => {
+    if (open) setPlaced(false);
+  }, [open]);
   const total = cart.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
 
   // Voice can pre-select "to go / for here" and the table; the customer still confirms.
@@ -83,9 +88,10 @@ export function CartSheet({
         return;
       }
       if (!res.ok) throw new Error(data.message);
-      clearCart();
+      setPlaced(true);
       setActiveOrderId(data.id);
       router.push(`/order/${data.id}`);
+      clearCart();
     } catch {
       setError(t("cart.errorGeneric"));
     } finally {
@@ -104,7 +110,7 @@ export function CartSheet({
       </div>
 
       {cart.length === 0 ? (
-        <p className="p-8 text-center text-ink-soft">{t("cart.empty")}</p>
+        <p className="p-8 text-center text-ink-soft">{placed ? t("cart.placing") : t("cart.empty")}</p>
       ) : (
         <div className="space-y-6 p-5">
           <ul className="space-y-3">

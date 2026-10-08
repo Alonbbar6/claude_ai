@@ -11,7 +11,7 @@ import { DishImage } from "./ui";
 
 interface ActiveOrder {
   id: string;
-  order_number: number;
+  order_number: number | null; // null = couldn't load it right now (we still link to tracking)
   status: string;
 }
 
@@ -30,15 +30,20 @@ export function Home({
 
   useEffect(() => {
     if (!activeOrderId) return setActive(null);
+    // Only forget the order when it's really gone or finished. A failed lookup (backend or Firestore quota
+    // hiccup) keeps it, so the customer can still get back to tracking.
+    const keep = () => setActive({ id: activeOrderId, order_number: null, status: "RECEIVED" });
     fetch(`/api/orders/${activeOrderId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((o) => {
-        if (!o || o.status === "COMPLETED" || o.status === "CANCELLED") {
+      .then(async (r) => {
+        if (r.status === 404) return setActiveOrderId(null);
+        if (!r.ok) return keep();
+        const o = await r.json();
+        if (o.status === "COMPLETED" || o.status === "CANCELLED") {
           setActive(null);
-          if (!o || o.status === "COMPLETED" || o.status === "CANCELLED") setActiveOrderId(null);
+          setActiveOrderId(null);
         } else setActive(o);
       })
-      .catch(() => {});
+      .catch(keep);
   }, [activeOrderId, setActiveOrderId]);
 
   return (
@@ -58,10 +63,12 @@ export function Home({
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-75" />
                 <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-gold" />
               </span>
-              {t("home.activeOrder", {
-                n: active.order_number,
-                status: t(`order.status.${active.status}` as never).toLowerCase(),
-              })}
+              {active.order_number === null
+                ? t("home.activeOrderPending")
+                : t("home.activeOrder", {
+                    n: active.order_number,
+                    status: t(`order.status.${active.status}` as never).toLowerCase(),
+                  })}
             </span>
             <span className="font-bold text-gold">{t("home.track")} →</span>
           </Link>
