@@ -283,21 +283,19 @@ export async function advanceDay(): Promise<string> {
   return nextDay;
 }
 
-/** Reopen: step the business-day cursor BACK one day and mark the restaurant
- *  open again. The inverse of Close Day's advance, for when a day was closed by
- *  mistake or to re-run the demo day. */
+/** Reopen for business on the CURRENT day. Close Day already advanced the
+ *  cursor forward to a fresh day; opening simply marks the restaurant open
+ *  again (no cursor change), so a newly-opened day starts with 0 orders until a
+ *  customer places one. */
 export async function openDay(): Promise<string> {
   const current = await getCurrentDay();
-  const prev = new Date(`${current}T12:00:00Z`);
-  prev.setUTCDate(prev.getUTCDate() - 1);
-  const prevDay = prev.toISOString().slice(0, 10);
   await prisma.systemState.upsert({
     where: { id: 'singleton' },
-    create: { id: 'singleton', currentDay: prevDay, closed: false },
-    update: { currentDay: prevDay, closed: false, updatedAt: new Date() },
+    create: { id: 'singleton', currentDay: current, closed: false },
+    update: { closed: false, updatedAt: new Date() },
   });
   cachedNow = null;
-  return prevDay;
+  return current;
 }
 
 /** Whether the restaurant is currently closed (customer app stops taking orders). */
