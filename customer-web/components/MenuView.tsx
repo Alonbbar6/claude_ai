@@ -39,12 +39,20 @@ export function MenuView({
   const closeDish = useCallback(() => setOpenDish(null), []);
   const closeCart = useCallback(() => setCartOpen(false), []);
 
-  // Deep link: /r/<id>?dish=MENU-006 opens that dish (used by suggestions on other pages).
+  // Deep links from other pages (suggestions, voice on the home page):
+  //   ?dish=MENU-006                         opens that dish
+  //   ?cart=open&fulfillment=to_go&table=4   opens the cart with "to go / for here" and table preset
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("dish");
-    const d = id && dishes.find((x) => x.id === id);
+    const q = new URLSearchParams(window.location.search);
+    const d = dishes.find((x) => x.id === q.get("dish"));
     if (d) setOpenDish(d);
-  }, [dishes]);
+    if (q.get("cart") === "open" && canOrder) {
+      const f = q.get("fulfillment");
+      setCartPreset({ fulfillment: f === "to_go" || f === "for_here" ? f : null, table: q.get("table") });
+      setCartOpen(true);
+    }
+    if (q.has("dish") || q.has("cart")) window.history.replaceState(null, "", window.location.pathname);
+  }, [dishes, canOrder]);
 
   const byCategory = useMemo(
     () =>

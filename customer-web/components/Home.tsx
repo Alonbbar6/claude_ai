@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { TRATTORIA_ID } from "@/lib/content";
+import { VOICE_ENABLED, VoiceAssistant } from "./VoiceAssistant";
 import type { Localized } from "@/lib/content";
 import type { ViewDish, ViewRestaurant } from "@/lib/types";
 import { useApp } from "./AppProvider";
@@ -11,12 +14,14 @@ import { DishImage } from "./ui";
 export function Home({
   restaurants,
   special,
+  dishes,
 }: {
   restaurants: ViewRestaurant[];
   special: { dish: ViewDish; reason: Localized } | null;
   dishes: ViewDish[];
 }) {
   const { t, L, price, customer } = useApp();
+  const router = useRouter();
   const open = restaurants.filter((r) => r.acceptsOrders);
   const closed = restaurants.filter((r) => !r.acceptsOrders);
 
@@ -94,6 +99,20 @@ export function Home({
         </section>
         <DemoFooter />
       </main>
+      {/* Voice from the start: "where can I eat sushi?" / "a Margherita to go" */}
+      {VOICE_ENABLED && (
+        <VoiceAssistant
+          dishes={dishes}
+          hint={t("voice.homeHint")}
+          onOpenDish={(d) => router.push(`/r/${TRATTORIA_ID}?dish=${d.id}`)}
+          onReviewCart={(p) => {
+            const q = new URLSearchParams({ cart: "open" });
+            if (p.fulfillment) q.set("fulfillment", p.fulfillment);
+            if (p.table) q.set("table", p.table);
+            router.push(`/r/${TRATTORIA_ID}?${q}`);
+          }}
+        />
+      )}
     </Gate>
   );
 }

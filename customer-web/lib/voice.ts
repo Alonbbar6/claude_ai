@@ -51,6 +51,11 @@ const MEAL_TRIMMED: Record<Lang, { fits: string; none: string }> = {
   es: { fits: "Esto es lo que cabe en tu presupuesto y respeta lo que evitas. Revísalo antes de confirmar.", none: "Ahora mismo nada del menú cabe en ese presupuesto y respeta lo que evitas." },
 };
 
+const UNAVAILABLE: Record<Lang, string> = {
+  en: "The voice assistant isn't available right now. You can still browse the menu and order from it.",
+  es: "El asistente de voz no está disponible en este momento. Puedes ver el menú y pedir desde ahí.",
+};
+
 const FALLBACK: Record<Lang, string> = {
   en: "Sorry, I couldn't understand that. Try “two Margheritas and a Coke, to go”.",
   es: "Perdón, no te entendí. Prueba “dos Margheritas y una Coca-Cola, para llevar”.",
@@ -154,7 +159,12 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
           `<customer_said>${text.slice(0, 300)}</customer_said>`,
       },
     ],
+  }).catch((err: unknown) => {
+    // e.g. out of API credit, rate limit, network: answer politely instead of failing the request
+    console.error("voice: Claude unavailable", err instanceof Error ? err.message : err);
+    return null;
   });
+  if (!res) return { ...empty, reply: UNAVAILABLE[lang] };
   if (res.stop_reason === "refusal" || !res.parsed_output) return empty;
   const out = res.parsed_output;
 

@@ -26,9 +26,13 @@ function serviceAccount(): Record<string, string> | null {
   return sa;
 }
 
-let fs: Firestore | null = null;
+// One instance per process. Next.js may load this module more than once (pages and API routes are
+// bundled separately), and Firestore throws if settings() runs twice on the same app, so the instance
+// lives on globalThis rather than in a module variable.
+const g = globalThis as unknown as { __barmadeFirestore?: Firestore };
+
 export function firestore(): Firestore {
-  if (fs) return fs;
+  if (g.__barmadeFirestore) return g.__barmadeFirestore;
   const existing = getApps().find((a) => a.name === "barmade-web");
   let app: App;
   if (existing) app = existing;
@@ -37,9 +41,14 @@ export function firestore(): Firestore {
     const projectId = process.env.FIREBASE_PROJECT_ID?.trim() || sa?.project_id;
     app = initializeApp(sa ? { credential: cert(sa), projectId } : { projectId }, "barmade-web");
   }
-  fs = getFirestore(app);
-  fs.settings({ ignoreUndefinedProperties: true });
-  return fs;
+  const db = getFirestore(app);
+  try {
+    db.settings({ ignoreUndefinedProperties: true });
+  } catch {
+    // Already configured by another copy of this module; same settings, nothing to do.
+  }
+  g.__barmadeFirestore = db;
+  return db;
 }
 
 export function firestoreConfigured() {

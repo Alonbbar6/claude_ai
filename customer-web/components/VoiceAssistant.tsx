@@ -57,7 +57,9 @@ export function VoiceAssistant({
   dishes,
   onOpenDish,
   onReviewCart,
+  hint,
 }: {
+  hint?: string;
   dishes: ViewDish[];
   onOpenDish: (d: ViewDish) => void;
   onReviewCart: (preset: CartPreset) => void;
@@ -236,6 +238,11 @@ export function VoiceAssistant({
             </div>
           )}
         </div>
+      )}
+      {hint && !showBubble && (
+        <button type="button" onClick={toggle} className="rounded-full bg-night px-4 py-2 text-sm font-bold text-white shadow-2xl hover:bg-night/90">
+          {hint}
+        </button>
       )}
       <button
         type="button"
