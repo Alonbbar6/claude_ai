@@ -69,6 +69,18 @@ export default function App() {
     }
   }
 
+  // Live restaurant open/closed state, shown as a status pill in the header.
+  // The single Close/Open action lives on the Close Day page (one button, two
+  // states) so there is never a close+open pair visible at once.
+  const [dayClosed, setDayClosed] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const read = () => api<{ closed: boolean }>('/status').then((s) => { if (alive) setDayClosed(s.closed); }).catch(() => {});
+    read();
+    const t = setInterval(read, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, [bump, tab]);
+
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
@@ -135,8 +147,8 @@ export default function App() {
               <Zap size={16} />
               {rushing ? 'Simulating…' : 'Simulate rush'}
             </Button>
-            <Button onClick={() => setTab('closeday')}>
-              <Sparkles size={16} /> Close day
+            <Button onClick={() => setTab('closeday')} variant={dayClosed ? 'ghost' : 'primary'}>
+              <Sparkles size={16} /> {dayClosed === null ? 'Day' : dayClosed ? 'Closed — open day' : 'Open — close day'}
             </Button>
           </div>
         </header>
