@@ -19,7 +19,7 @@ final class MerchantStore {
 
     /// BarMade kitchen API; picked like a restaurant under `barMadeId`.
     static let barMadeId = "barmade"
-    static let defaultBarMadeServer = "https://barmade-api.onrender.com"
+    static let defaultBarMadeServer = "https://barmade-riw5.onrender.com"
 
     private(set) var serverURL: String
     private(set) var barMadeServerURL: String
@@ -112,6 +112,20 @@ final class MerchantStore {
             barMadeError = error.localizedDescription
         }
     }
+
+    /// Moves a BarMade order on, then reloads so every screen shows it.
+    /// Returns an error message, or nil on success.
+    func setBarMadeOrderStatus(_ orderId: String, to status: String) async -> String? {
+        do {
+            try await barMadeClient.setStatus(orderId, to: status)
+            await reloadBarMade()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func barMadeOrder(_ id: String) -> BarMadeOrder? { barMade.orders.first { $0.id == id } }
 
     // MARK: - BarMade derived
 

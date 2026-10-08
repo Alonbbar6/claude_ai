@@ -1,6 +1,6 @@
 import Foundation
 
-// BarMade kitchen API (https://barmade-api.onrender.com): batch-tracked
+// BarMade kitchen API (https://barmade-riw5.onrender.com): batch-tracked
 // inventory, menu recipes, orders and expiry alerts, stored in Firestore.
 // Read-only from the merchant app.
 
@@ -61,6 +61,29 @@ struct BarMadeOrder: Decodable, Identifiable, Hashable {
     let items: [BarMadeOrderLine]
     let total: Double
     let consumed: [BarMadeConsumption]
+    // Customer-app orders only (source "barmade-web").
+    var source: String?
+    var customerName: String?
+    var fulfillment: String?  // to_go | for_here
+    var tableNumber: String?
+    var statusHistory: [BarMadeStatusChange]?
+
+    /// Where the kitchen can move this order. The server checks it too.
+    var nextStatuses: [String] {
+        switch status {
+        case "RECEIVED": ["PREPARING", "CANCELLED"]
+        case "PREPARING": ["READY", "CANCELLED"]
+        case "READY": ["COMPLETED"]
+        default: []
+        }
+    }
+
+    var isOpen: Bool { !nextStatuses.isEmpty }
+}
+
+struct BarMadeStatusChange: Decodable, Hashable {
+    let status: String
+    let at: Date
 }
 
 struct BarMadeOrderLine: Decodable, Hashable {
@@ -129,6 +152,16 @@ struct BarMadeClient {
             updatedAt: Date())
     }
 
+    /// RECEIVED -> PREPARING -> READY -> COMPLETED, or CANCELLED before READY.
+    /// The customer's order page follows within ~3 s.
+    func setStatus(_ orderId: String, to status: String) async throws {
+        var request = URLRequest(url: baseURL.appending(path: "/api/orders/\(orderId)/status"))
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["status": status])
+        _ = try await send(request)
+    }
+
     private struct Envelope<T: Decodable>: Decodable { let data: T }
     private struct ErrorBody: Decodable {
         struct Detail: Decodable { let message: String }
@@ -136,7 +169,11 @@ struct BarMadeClient {
     }
 
     private func get<T: Decodable>(_ path: String, as: T.Type) async throws -> T {
-        var request = URLRequest(url: baseURL.appending(path: path))
+        try JSONDecoder.barMade.decode(T.self, from: await send(URLRequest(url: baseURL.appending(path: path))))
+    }
+
+    private func send(_ request: URLRequest) async throws -> Data {
+        var request = request
         // Render's free tier sleeps when idle; the first request can take ~50 s to wake it.
         request.timeoutInterval = 60
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -145,7 +182,7 @@ struct BarMadeClient {
             let message = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error.message
             throw APIError(message: message ?? "BarMade returned \(status)")
         }
-        return try JSONDecoder.barMade.decode(T.self, from: data)
+        return data
     }
 }
 

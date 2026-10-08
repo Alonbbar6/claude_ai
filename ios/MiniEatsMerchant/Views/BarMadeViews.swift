@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Read-only merchant view of the BarMade kitchen: batch-level inventory,
-/// menu with portions left, orders and expiry alerts.
+/// Merchant view of the BarMade kitchen: batch-level inventory, menu with
+/// portions left, orders and expiry alerts. Stock and menu are read-only;
+/// the kitchen moves orders through their statuses.
 struct BarMadeRootView: View {
     @Environment(MerchantStore.self) private var store
 
@@ -14,6 +15,7 @@ struct BarMadeRootView: View {
                 .tabItem { Label("Menu", systemImage: "menucard.fill") }
             NavigationStack { BarMadeOrdersView() }
                 .tabItem { Label("Orders", systemImage: "receipt.fill") }
+                .badge(store.barMade.orders.filter { $0.status == "RECEIVED" }.count)
             NavigationStack { BarMadeAlertsView() }
                 .tabItem { Label("Alerts", systemImage: "bell.fill") }
                 .badge(store.barMadeUnreadAlerts)
@@ -24,7 +26,8 @@ struct BarMadeRootView: View {
         .task {
             if store.barMade.updatedAt == nil { await store.reload() }
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
+                // New tickets should show up while the customer is still at the counter.
+                try? await Task.sleep(for: .seconds(10))
                 await store.reload()
             }
         }
@@ -49,6 +52,35 @@ private func batchColor(_ status: String) -> Color {
 
 private func label(_ status: String) -> String {
     status.replacingOccurrences(of: "_", with: " ").capitalized
+}
+
+private func statusColor(_ status: String) -> Color {
+    switch status {
+    case "RECEIVED": .orange
+    case "PREPARING": .blue
+    case "READY": .purple
+    case "CANCELLED": .red
+    default: .brand
+    }
+}
+
+/// Button title for moving an order to `status`.
+private func actionTitle(_ status: String) -> String {
+    switch status {
+    case "PREPARING": "Start preparing"
+    case "READY": "Mark ready"
+    case "COMPLETED": "Complete"
+    case "CANCELLED": "Cancel order"
+    default: label(status)
+    }
+}
+
+private func fulfillmentText(_ order: BarMadeOrder) -> String? {
+    switch order.fulfillment {
+    case "to_go": "To go"
+    case "for_here": order.tableNumber.map { "For here · table \($0)" } ?? "For here"
+    default: nil
+    }
 }
 
 /// Loading spinner while BarMade wakes up, or the last error, above a list.
@@ -301,44 +333,122 @@ struct BarMadeDishView: View {
 
 struct BarMadeOrdersView: View {
     @Environment(MerchantStore.self) private var store
+    @State private var busy: String?
+    @State private var error: String?
 
     var body: some View {
+        let open = store.barMade.orders.filter(\.isOpen)
+        let done = store.barMade.orders.filter { !$0.isOpen }
         List {
             BarMadeStatus()
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+            }
             if store.barMade.orders.isEmpty && store.barMade.updatedAt != nil {
                 ContentUnavailableView("No orders yet", systemImage: "receipt")
             }
-            ForEach(store.barMade.orders) { order in
-                NavigationLink(value: order) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(order.id).font(.body.weight(.semibold))
-                            Badge(text: label(order.status), color: order.status == "COMPLETED" ? .brand : .orange)
-                            Spacer()
-                            Text(Format.money(order.total)).font(.subheadline.monospacedDigit())
+            if !open.isEmpty {
+                Section("Open") {
+                    ForEach(open) { order in
+                        row(order)
+                        // The common next step, one tap from the list. Cancel lives on the order page.
+                        if let next = order.nextStatuses.first {
+                            Button {
+                                Task { await advance(order, to: next) }
+                            } label: {
+                                HStack {
+                                    Text(actionTitle(next)).bold()
+                                    Spacer()
+                                    if busy == order.id { ProgressView() }
+                                }
+                            }
+                            .disabled(busy != nil)
+                            .accessibilityIdentifier("advance-\(order.id)")
                         }
-                        Text(order.items.map { "\($0.quantity)× \($0.name)" }.joined(separator: ", "))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                        Text(order.createdAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
+            }
+            if !done.isEmpty {
+                Section("Done") { ForEach(done) { row($0) } }
             }
         }
         .navigationTitle("BarMade Orders")
         .refreshable { await store.reload() }
-        .navigationDestination(for: BarMadeOrder.self) { BarMadeOrderView(order: $0) }
+        .navigationDestination(for: String.self) { BarMadeOrderView(orderId: $0) }
+    }
+
+    private func row(_ order: BarMadeOrder) -> some View {
+        NavigationLink(value: order.id) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(order.customerName ?? order.id).font(.body.weight(.semibold))
+                    Badge(text: label(order.status), color: statusColor(order.status))
+                    Spacer()
+                    Text(Format.money(order.total)).font(.subheadline.monospacedDigit())
+                }
+                Text(order.items.map { "\($0.quantity)× \($0.name)" }.joined(separator: ", "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                HStack(spacing: 6) {
+                    if let f = fulfillmentText(order) { Text(f).bold() }
+                    Text(order.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    if order.customerName != nil { Text("· \(order.id)") }
+                }
+                .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func advance(_ order: BarMadeOrder, to status: String) async {
+        busy = order.id
+        error = await store.setBarMadeOrderStatus(order.id, to: status)
+        busy = nil
     }
 }
 
 struct BarMadeOrderView: View {
-    let order: BarMadeOrder
+    @Environment(MerchantStore.self) private var store
+    let orderId: String
+    @State private var busy = false
+    @State private var error: String?
+    @State private var confirmCancel = false
 
     var body: some View {
+        // Read from the store so a status change (here or by refresh) shows at once.
+        if let order = store.barMadeOrder(orderId) {
+            content(order)
+        } else {
+            ContentUnavailableView("Order not found", systemImage: "receipt")
+        }
+    }
+
+    private func content(_ order: BarMadeOrder) -> some View {
         List {
             Section {
-                InfoRow(label: "Status", value: label(order.status))
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    Badge(text: label(order.status), color: statusColor(order.status))
+                }
+                if let name = order.customerName { InfoRow(label: "Customer", value: name) }
+                if let f = fulfillmentText(order) { InfoRow(label: "Fulfillment", value: f) }
                 InfoRow(label: "Placed", value: order.createdAt.formatted(date: .abbreviated, time: .shortened))
+                if order.customerName != nil { InfoRow(label: "Order", value: order.id) }
+            }
+            if order.isOpen {
+                Section {
+                    ForEach(order.nextStatuses.filter { $0 != "CANCELLED" }, id: \.self) { next in
+                        Button(actionTitle(next)) { Task { await advance(order, to: next) } }
+                            .bold()
+                    }
+                    if order.nextStatuses.contains("CANCELLED") {
+                        Button("Cancel order", role: .destructive) { confirmCancel = true }
+                    }
+                    if busy { ProgressView() }
+                    if let error { Text(error).foregroundStyle(.red).font(.caption) }
+                } footer: {
+                    Text("The customer's order page updates within a few seconds.")
+                }
+                .disabled(busy)
             }
             Section("Items") {
                 ForEach(order.items, id: \.menuItemId) { line in
@@ -352,6 +462,18 @@ struct BarMadeOrderView: View {
                     Text("Total").bold()
                     Spacer()
                     Text(Format.money(order.total)).bold().monospacedDigit()
+                }
+            }
+            if let history = order.statusHistory, !history.isEmpty {
+                Section("Timeline") {
+                    ForEach(history, id: \.self) { h in
+                        HStack {
+                            Text(label(h.status))
+                            Spacer()
+                            Text(h.at.formatted(date: .omitted, time: .shortened))
+                                .foregroundStyle(.secondary).monospacedDigit()
+                        }
+                    }
                 }
             }
             Section("Stock used") {
@@ -368,8 +490,20 @@ struct BarMadeOrderView: View {
                 }
             }
         }
-        .navigationTitle(order.id)
+        .navigationTitle(order.customerName ?? order.id)
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Cancel this order?", isPresented: $confirmCancel, titleVisibility: .visible) {
+            Button("Cancel order", role: .destructive) { Task { await advance(order, to: "CANCELLED") } }
+            Button("Keep order", role: .cancel) {}
+        } message: {
+            Text("The customer will see it as cancelled.")
+        }
+    }
+
+    private func advance(_ order: BarMadeOrder, to status: String) async {
+        busy = true
+        error = await store.setBarMadeOrderStatus(order.id, to: status)
+        busy = false
     }
 }
 
@@ -440,7 +574,7 @@ struct BarMadeSettingsView: View {
             } header: {
                 Text("BarMade server")
             } footer: {
-                Text("Read-only: stock, menu and orders are managed in BarMade.")
+                Text("Stock and menu are managed in BarMade. Orders can be moved through their statuses here.")
             }
         }
         .navigationTitle("Settings")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app import data, qa
+from app.barmade import BARMADE_RESTAURANT_ID, BarMadeClient, BarMadeError, BarMadeSync
 from app.catalog import CatalogService, CategoryIn, CategoryUpdate, MenuItemIn, MenuItemUpdate
 from app.data import COURIERS, RESTAURANTS, USERS
 from app.demand import DemandService
@@ -77,7 +79,16 @@ async def lifespan(app: FastAPI):
     if os.environ.get("QA_SEED"):
         n = qa.seed(app.state.orders)
         logging.getLogger(__name__).info("QA_SEED: added %s and %d QA orders", qa.QA_RESTAURANT_ID, n)
+    app.state.barmade = None
+    if url := os.environ.get("BARMADE_API_URL"):
+        app.state.barmade = BarMadeSync(app.state.orders, app.state.bus, BarMadeClient(url))
+        # In the background: a sleeping Render instance takes ~50 s to answer.
+        import_task = asyncio.create_task(app.state.barmade.import_with_retry())
     yield
+    if app.state.barmade:
+        import_task.cancel()
+        await app.state.barmade.drain()
+        await app.state.barmade.client.aclose()
     await app.state.orders.shutdown()
 
 
@@ -354,6 +365,17 @@ def _catalog(rid: str) -> CatalogService:
     return CatalogService(RESTAURANTS, _inventory())
 
 
+def _barmade() -> BarMadeSync | None:
+    return getattr(app.state, "barmade", None)
+
+
+def _stock_writable(rid: str) -> None:
+    """When orders go to BarMade, it owns the stock; local edits would be
+    overwritten on the next sync."""
+    if rid == BARMADE_RESTAURANT_ID and (bm := _barmade()) and bm.forward_orders:
+        raise HTTPException(409, "Stock for this restaurant is managed in BarMade")
+
+
 def _call(fn, *args):
     """Map service errors to HTTP: KeyError -> 404, ValueError -> 422."""
     try:
@@ -434,6 +456,7 @@ class IngredientUpdate(BaseModel):
 @app.post(M + "/inventory", status_code=201)
 async def add_ingredient(rid: str, req: IngredientIn):
     _catalog(rid)
+    _stock_writable(rid)
     ing = _inventory().add(Ingredient(restaurant_id=rid, **req.model_dump()))
     return _inventory().view(ing)
 
@@ -441,6 +464,7 @@ async def add_ingredient(rid: str, req: IngredientIn):
 @app.put(M + "/inventory/{ing_id}")
 async def update_ingredient(rid: str, ing_id: str, req: IngredientUpdate):
     _catalog(rid)
+    _stock_writable(rid)
     ing = _call(_inventory().update, rid, ing_id, req.model_dump(exclude_unset=True))
     return _inventory().view(ing)
 
@@ -448,6 +472,7 @@ async def update_ingredient(rid: str, ing_id: str, req: IngredientUpdate):
 @app.delete(M + "/inventory/{ing_id}", status_code=204)
 async def delete_ingredient(rid: str, ing_id: str):
     _catalog(rid)
+    _stock_writable(rid)
     _call(_inventory().delete, rid, ing_id)
 
 
@@ -460,6 +485,7 @@ class StockMove(BaseModel):
 @app.post(M + "/inventory/{ing_id}/adjust")
 async def adjust_stock(rid: str, ing_id: str, req: StockMove):
     _catalog(rid)
+    _stock_writable(rid)
     inv = _inventory()
     fn = {"restock": inv.restock, "waste": inv.waste, "count": inv.count}[req.kind]
     ing = _call(fn, rid, ing_id, req.quantity, req.note)
@@ -478,6 +504,34 @@ async def inventory_alerts(rid: str):
     _catalog(rid)
     return _inventory().alerts_for(rid)
 
+
+
+# ---- merchant: BarMade kitchen ---------------------------------------------
+
+def _barmade_or_404() -> BarMadeSync:
+    if not (bm := _barmade()):
+        raise HTTPException(404, "BarMade is not connected (set BARMADE_API_URL)")
+    return bm
+
+
+@app.get("/api/merchant/barmade")
+async def barmade_status():
+    """Import state, last stock sync and which orders reached BarMade."""
+    return _barmade_or_404().status()
+
+
+@app.post("/api/merchant/barmade/sync")
+async def barmade_sync():
+    """Re-import if the first import failed, else pull BarMade's stock."""
+    bm = _barmade_or_404()
+    try:
+        if not bm.imported:
+            r = await bm.import_kitchen()
+            return {"imported": True, "items": len(r.menu), "changed": None}
+        return {"imported": True, "changed": await bm.sync_stock()}
+    except BarMadeError as exc:
+        bm.last_error = str(exc)
+        raise HTTPException(502, f"BarMade: {exc}")
 
 
 # ---- merchant: demand by time of day ----------------------------------------
