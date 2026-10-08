@@ -5,7 +5,7 @@ skip the lunch line by ordering ahead from their phone. All restaurant data is *
 
 | Part | Where | What it is |
 |---|---|---|
-| **Customer web app** | [`customer-web/`](customer-web/HANDOFF.md) | The page customers open from a QR code: name-only account, EN/ES, live menu, to go / for here, live order tracking, Claude suggestions. Next.js, deployed on Railway. |
+| **Customer web app** | [`customer-web/`](customer-web/HANDOFF.md) | The page customers open from a QR code: name-only account, EN/ES, live menu, to go / for here, live order tracking, AI suggestions and voice ordering (Claude or Gemini), group orders with a split bill. Next.js, deployed on Railway. |
 | **BarMade backend** | `https://barmade-riw5.onrender.com` (separate service) | Express + Firestore. Owns the menu, recipes, batch inventory, orders, movements and order status. |
 | Mini Eats prototype | [`app/`](#mini-eats-prototype-python-backend), `static/`, `tests/` | Python/FastAPI backend: predictive ETA, pickup "when to leave", courier dispatch, notifications, merchant menu + inventory. |
 | iOS apps | [`ios/`](ios/README.md) | SwiftUI customer app (MiniEats) and merchant app (MiniEatsMerchant). |
@@ -18,7 +18,8 @@ skip the lunch line by ordering ahead from their phone. All restaurant data is *
 ```
 Phone (QR) ─► customer-web (Railway) ──POST /api/orders──► BarMade API (Render) ─► Firestore barmade/state/*
                       │                                                                  ▲
-                      └──────────── reads menu, stock, order status (read-only) ──────────┘
+                      ├──────────── reads menu, stock, order status (read-only) ──────────┘
+                      └──────────── AI: Claude or Gemini (suggestions + voice, no personal data)
 ```
 
 **What a customer can do**
@@ -27,14 +28,23 @@ Phone (QR) ─► customer-web (Railway) ──POST /api/orders──► BarMade
 - **Use the app in English (default) or Spanish**, with a toggle that also translates dish names and descriptions.
 - **Browse Trattoria Little Italy.** Price, recipe and stock are read live from the backend. Each dish shows
   "Only N left" or "Sold out". Dataset dishes the restaurant isn't serving appear as sold out.
-- **See allergen badges** (dairy, gluten, egg, fish, pork) derived from the recipe ingredients, with an "ask staff" note.
+- **See allergen badges** (dairy, gluten, egg, fish, pork) derived from the recipe ingredients, with an "ask staff"
+  note. A saved "avoid" list flags and sorts away clashing dishes.
 - **See a chef's special** picked from what the kitchen has the most of compared with its reorder point (PRD FR-8).
-- **Get "Picked for you" suggestions** from taste chips or a free-text craving ("something light under $15").
-  **Claude** ranks the in-stock, allergy-safe dishes and writes a one-line reason. It never receives the customer's
-  name or id. Without an API key, a rule-based fallback is used.
-- **Choose 🥡 To go (packed) or 🍽️ For here (on a plate)**, with an optional table number. No payments:
+- **Get "Picked for you" suggestions** from taste chips or a free-text craving ("something light under $15"). The AI
+  (Claude or Gemini) ranks the in-stock, allergy-safe dishes and writes a one-line reason. It never receives the
+  customer's name or id. Without an AI key, a rule-based fallback is used.
+- **Order by voice** from the home page or the menu: "two Margheritas and a Coke, to go", "where can I get sushi?",
+  "dinner for two under $40, no pork". Code validates every dish, quantity, allergen and budget; the bubble shows what
+  was added with Undo, and the customer confirms in the cart. Voice never orders by itself, and follow-ups like
+  "order that one" remember the conversation.
+- **Order as a group:** share a 4-letter code, everyone adds their own dishes live, the host picks "each pays their
+  own" or "split equally" and sends **one** order to the kitchen. Each person sees what they owe (paid at the counter
+  or table; the host can mark who paid).
+- **Choose 🥡 To go (packed) or 🍽️ For here (on a plate)**, with an optional table number. No online payments:
   "Pay at pickup / at your table".
-- **Track the order live** with an "Ordered via BarMade" badge. The order page reads the backend status every 3 s:
+- **Track orders live** with an "Ordered via BarMade" badge. An **open orders bar** on every page keeps each order
+  (including group orders) visible until the merchant marks it `COMPLETED` or `CANCELLED`:
   `RECEIVED → PREPARING → READY → COMPLETED`.
 - **Browse three closed restaurants** (La Ventanita de Calle 8, Brickell Sushi Co., Wynwood Greens). They show a
   browse-only menu with original illustrations, are always closed in the demo, and suggest similar dishes at the open Trattoria.
@@ -43,13 +53,14 @@ Phone (QR) ─► customer-web (Railway) ──POST /api/orders──► BarMade
 
 1. The customer app validates the basket against the live menu and stock.
 2. `POST /api/orders` on the BarMade backend sends `items` plus `channel: "barmade"`, `source: "barmade-web"`,
-   `fulfillment`, `tableNumber`, `customerName` and `customerId`.
+   `fulfillment`, `tableNumber`, `customerName` and `customerId`. A group order is merged into one order first.
 3. The backend computes consumption from the recipe, deducts inventory (oldest batch first), records the movement, and
    creates the order as `RECEIVED` (5% BarMade channel fee).
-4. The merchant moves the order with `PATCH /api/orders/:id/status`. The customer's screen follows within ~3 s.
+4. The merchant moves the order with `PATCH /api/orders/:id/status`. The customer's screen follows within a few seconds.
 
-Tested end to end against the real backend. For example, ORD-004 (a Coca-Cola, for here at table 4): inventory 119 → 118,
-movement `MOV-000002 sale`, status `RECEIVED`.
+Tested end to end against the real backend. Examples: ORD-004 (a Coca-Cola, for here at table 4): inventory 119 → 118,
+movement `MOV-000002 sale`. Group order ORD-022 (two people, one Coca-Cola each): one order with 2 Coca-Colas,
+$2.99 each, inventory 109 → 107.
 
 **Run it locally**
 
@@ -57,19 +68,19 @@ movement `MOV-000002 sale`, status `RECEIVED`.
 cd customer-web
 nvm use              # Node 20+
 npm install
-cp .env.example .env # BARMADE_API_URL, FIREBASE_SERVICE_ACCOUNT, FIREBASE_PROJECT_ID, ANTHROPIC_API_KEY
+cp .env.example .env # BARMADE_API_URL, FIREBASE_SERVICE_ACCOUNT, FIREBASE_PROJECT_ID,
+                     # AI_PROVIDER + GEMINI_API_KEY (or ANTHROPIC_API_KEY), NEXT_PUBLIC_VOICE_ORDERING=on
 npm run dev          # http://localhost:3000
 ```
 
 With no backend or Firebase variables, it runs fully offline on the synthetic dataset and an embedded
-database, without touching the team's data. `GET /api/health` shows what's active, and `npm run smoke -- <url>` checks a
-deployment (read-only unless `--write`).
+database, without touching the team's data. `GET /api/health` shows what's active (storage, backend and AI provider),
+and `npm run smoke -- <url>` checks a deployment (read-only unless `--write`).
 
 **Deploy:** see [`customer-web/HANDOFF.md`](customer-web/HANDOFF.md) (Railway, root directory `customer-web`).
 **Contract with the backend:** [`docs/handoff/orders-contract.md`](docs/handoff/orders-contract.md).
 
-**Next up:** voice ordering. Speech builds the cart ("two Margheritas and a Coke, to go") and the customer
-confirms with one tap. The merchant dashboard also needs buttons for the status changes.
+**Next up:** the merchant dashboard needs buttons for the status changes (the backend endpoint already exists).
 
 ---
 

@@ -53,7 +53,8 @@ export function OrderTracker({ id }: { id: string }) {
       } catch {
         /* keep polling through network blips */
       }
-      if (!stop) timer = setTimeout(poll, 3000);
+      // Every 4 s while visible; slower in a background tab (shared Firestore read quota).
+      if (!stop) timer = setTimeout(poll, document.hidden ? 20_000 : 4000);
     }
     poll();
     return () => {

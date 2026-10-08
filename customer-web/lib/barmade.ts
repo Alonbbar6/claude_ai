@@ -9,8 +9,8 @@ import "server-only";
  *  - order status is read from the backend; transitions are validated there.
  */
 
-const STATE = process.env.BARMADE_STATE_PATH?.trim() || "barmade/state";
-const LIVE_TTL_MS = 3000;
+// Cache live reads briefly so a page with several components hits the backend once.
+const LIVE_TTL_MS = 15_000;
 const WARMUP_EVERY_MS = 4 * 60_000;
 
 export function barmadeApiUrl(): string | null {
@@ -107,12 +107,33 @@ export function warmup() {
 // ---- Live menu + inventory ------------------------------------------------------
 
 let liveCache: { at: number; value: { menu: LiveMenuItem[]; inventory: LiveInventoryItem[] } } | null = null;
+let lastGood: { menu: LiveMenuItem[]; inventory: LiveInventoryItem[] } | null = null;
+// After a failure (e.g. quota exhausted, where the SDK retries for ~8 s) skip the backend for a minute.
+let failedUntil = 0;
 
+/** Live menu + inventory; on errors (e.g. quota) serves the last good copy if there is one. */
 export async function readLive(): Promise<{ menu: LiveMenuItem[]; inventory: LiveInventoryItem[] }> {
   if (liveCache && Date.now() - liveCache.at < LIVE_TTL_MS) return liveCache.value;
+  if (Date.now() < failedUntil && !lastGood) throw new BarmadeError(503, "BACKEND_UNAVAILABLE", "BarMade backend recently failed");
+  try {
+    const value = await fetchLive();
+    lastGood = value;
+    liveCache = { at: Date.now(), value };
+    warmup();
+    return value;
+  } catch (err) {
+    failedUntil = Date.now() + 60_000;
+    if (!lastGood) throw err;
+    console.error("BarMade live read failed, serving last good copy", err instanceof Error ? err.message : err);
+    liveCache = { at: Date.now(), value: lastGood }; // don't hammer a failing backend
+    return lastGood;
+  }
+}
+
+async function fetchLive(): Promise<{ menu: LiveMenuItem[]; inventory: LiveInventoryItem[] }> {
   // Menu + inventory come from the BarMade backend (source of truth), NOT
   // Firestore. The backend auto-86s dishes (available=false) and tracks live
-  // batch stock, so reading its API is what makes manager actions (86, reorder,
+  // stock, so reading its API is what makes manager actions (86, reorder,
   // close) reflect on the customer side. Firestore only ever held a stale copy.
   const [menuRaw, inventory] = await Promise.all([
     call<any[]>("GET", "/api/menu"),
@@ -133,10 +154,7 @@ export async function readLive(): Promise<{ menu: LiveMenuItem[]; inventory: Liv
         ? m.recipeLines.map((r: any) => ({ ingredientId: r.ingredientId, quantity: Number(r.quantity) }))
         : [],
   }));
-  const value = { menu, inventory };
-  liveCache = { at: Date.now(), value };
-  warmup();
-  return value;
+  return { menu, inventory };
 }
 
 /** Restaurant open/closed state from the backend. When closed, the customer app

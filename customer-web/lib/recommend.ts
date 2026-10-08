@@ -1,11 +1,11 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { aiProvider, structured } from "./ai";
 import { z } from "zod";
 import { getMenu, type Dish } from "./catalog";
 import type { Taste } from "./content";
 import type { Allergen } from "./types";
 import type { Lang } from "./i18n";
+import { avoidConflicts } from "./diet";
 
 /**
  * Taste-based suggestions.
@@ -29,10 +29,9 @@ export interface Suggestion {
 
 export interface RecommendResult {
   suggestions: Suggestion[];
-  source: "claude" | "rules";
+  source: "ai" | "rules";
 }
 
-const MODEL = process.env.ANTHROPIC_MODEL?.trim() || "claude-opus-5-5";
 const TIMEOUT_MS = 12_000;
 const CACHE_TTL_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; value: RecommendResult }>();
@@ -45,8 +44,7 @@ const Output = z.object({
 
 export function allowedFor(dish: Dish, avoid: Allergen[]) {
   if (dish.status === "sold_out") return false;
-  if (avoid.includes("meat") && !dish.vegetarian) return false;
-  return !dish.allergens.some((a) => avoid.includes(a));
+  return avoidConflicts(dish, avoid).length === 0;
 }
 
 export async function recommend(input: RecommendInput): Promise<RecommendResult> {
@@ -67,8 +65,8 @@ export async function recommend(input: RecommendInput): Promise<RecommendResult>
 
   let value: RecommendResult;
   try {
-    value = process.env.ANTHROPIC_API_KEY
-      ? await withClaude(input, candidates, menu.special?.dishId)
+    value = aiProvider()
+      ? await withAi(input, candidates, menu.special?.dishId)
       : rules(input, candidates, menu.special?.dishId);
   } catch (err) {
     console.error("recommend: falling back to rules", err instanceof Error ? err.message : err);
@@ -78,8 +76,7 @@ export async function recommend(input: RecommendInput): Promise<RecommendResult>
   return value;
 }
 
-async function withClaude(input: RecommendInput, candidates: Dish[], specialId?: string): Promise<RecommendResult> {
-  const client = new Anthropic({ timeout: TIMEOUT_MS, maxRetries: 1 });
+async function withAi(input: RecommendInput, candidates: Dish[], specialId?: string): Promise<RecommendResult> {
   const language = input.lang === "es" ? "Spanish (Latin American, friendly)" : "English";
   const menu = candidates.map((d) => ({
     id: d.id,
@@ -92,38 +89,31 @@ async function withClaude(input: RecommendInput, candidates: Dish[], specialId?:
     ...(d.status === "low" ? { fewLeft: true } : {}),
   }));
 
-  const response = await client.beta.messages.parse({
-    model: MODEL,
-    max_tokens: 2000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { effort: "low", format: betaZodOutputFormat(Output) },
+  const output = await structured({
+    schema: Output,
+    maxTokens: 2000,
+    timeoutMs: TIMEOUT_MS,
     system:
       "You recommend dishes at a casual Italian restaurant for a customer ordering ahead on their lunch break. " +
       "Choose only from the provided menu by id; every dish listed is in stock and safe for the customer's restrictions. " +
       "Pick up to 3 that best match their tastes (and craving, if given). Prefer variety across categories. " +
       "If a chef's special fits, include it. Each reason is one warm sentence of at most 14 words that ties the dish to " +
       `what they like. Never invent ingredients or prices. Write reasons in ${language}.`,
-    messages: [
-      {
-        role: "user",
-        content:
+    user:
           `<menu>${JSON.stringify(menu)}</menu>\n` +
           `<likes>${input.likes.join(", ") || "no preference given"}</likes>\n` +
           (input.craving ? `<craving>${input.craving.slice(0, 200)}</craving>\n` : "") +
           "Return your picks.",
-      },
-    ],
   });
 
-  if (response.stop_reason === "refusal") throw new Error("refusal");
+  if (!output) throw new Error("model declined");
   const ids = new Set(candidates.map((c) => c.id));
-  const suggestions = (response.parsed_output?.suggestions ?? [])
+  const suggestions = (output.suggestions ?? [])
     .filter((s, i, all) => ids.has(s.dishId) && all.findIndex((x) => x.dishId === s.dishId) === i)
     .slice(0, 3)
     .map((s) => ({ dishId: s.dishId, reason: s.reason.trim().slice(0, 160) }));
   if (!suggestions.length) throw new Error("no valid suggestions");
-  return { suggestions, source: "claude" };
+  return { suggestions, source: "ai" };
 }
 
 const REASON: Record<Lang, (tastes: string[]) => string> = {
