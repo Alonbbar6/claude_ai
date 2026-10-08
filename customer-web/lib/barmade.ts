@@ -1,5 +1,4 @@
 import "server-only";
-import { firestore, firestoreConfigured } from "./store/firestore";
 
 /**
  * The team's BarMade backend (Express + Firestore on Render) owns the restaurant:
@@ -35,10 +34,13 @@ export class BarmadeError extends Error {
 
 export interface LiveMenuItem {
   id: string;
+  key?: string;
   name: string;
   price: number;
   ingredients: { ingredientId: string; quantity: number }[];
   category?: string;
+  /** false = 86'd / not offered right now; the customer app shows it sold out. */
+  available?: boolean;
 }
 
 export interface LiveInventoryItem {
@@ -47,6 +49,12 @@ export interface LiveInventoryItem {
   unit: string;
   reorderPoint?: number;
   batches: { batchId?: string; quantity: number; expiresAt?: string }[];
+}
+
+export interface RestaurantStatus {
+  open: boolean;
+  closed: boolean;
+  currentDay?: string;
 }
 
 export interface LiveOrder {
@@ -100,27 +108,50 @@ let liveCache: { at: number; value: { menu: LiveMenuItem[]; inventory: LiveInven
 
 export async function readLive(): Promise<{ menu: LiveMenuItem[]; inventory: LiveInventoryItem[] }> {
   if (liveCache && Date.now() - liveCache.at < LIVE_TTL_MS) return liveCache.value;
-  let value: { menu: LiveMenuItem[]; inventory: LiveInventoryItem[] };
-  if (firestoreConfigured()) {
-    const db = firestore();
-    const [menu, inventory] = await Promise.all([
-      db.collection(`${STATE}/menu`).get(),
-      db.collection(`${STATE}/inventory`).get(),
-    ]);
-    value = {
-      menu: menu.docs.map((d) => ({ id: d.id, ...d.data() }) as LiveMenuItem),
-      inventory: inventory.docs.map((d) => ({ id: d.id, ...d.data() }) as LiveInventoryItem),
-    };
-  } else {
-    const [menu, inventory] = await Promise.all([
-      call<LiveMenuItem[]>("GET", "/api/menu"),
-      call<LiveInventoryItem[]>("GET", "/api/inventory"),
-    ]);
-    value = { menu, inventory };
-  }
+  // Menu + inventory come from the BarMade backend (source of truth), NOT
+  // Firestore. The backend auto-86s dishes (available=false) and tracks live
+  // batch stock, so reading its API is what makes manager actions (86, reorder,
+  // close) reflect on the customer side. Firestore only ever held a stale copy.
+  const [menuRaw, inventory] = await Promise.all([
+    call<any[]>("GET", "/api/menu"),
+    call<LiveInventoryItem[]>("GET", "/api/inventory"),
+  ]);
+  // The backend returns prisma menu rows (recipeLines, available); normalize to
+  // the shape the catalog expects (ingredients[]).
+  const menu: LiveMenuItem[] = (menuRaw ?? []).map((m) => ({
+    id: m.id,
+    key: m.key,
+    name: m.name,
+    price: Number(m.price),
+    category: m.category,
+    available: m.available !== false,
+    ingredients: Array.isArray(m.ingredients)
+      ? m.ingredients
+      : Array.isArray(m.recipeLines)
+        ? m.recipeLines.map((r: any) => ({ ingredientId: r.ingredientId, quantity: Number(r.quantity) }))
+        : [],
+  }));
+  const value = { menu, inventory };
   liveCache = { at: Date.now(), value };
   warmup();
   return value;
+}
+
+/** Restaurant open/closed state from the backend. When closed, the customer app
+ *  stops taking orders. Defaults to open if the backend can't be reached. */
+export async function getRestaurantStatus(): Promise<RestaurantStatus> {
+  if (!barmadeMode()) return { open: true, closed: false };
+  try {
+    const s = await call<RestaurantStatus>("GET", "/api/status");
+    return { open: !!s.open, closed: !!s.closed, currentDay: s.currentDay };
+  } catch {
+    return { open: true, closed: false };
+  }
+}
+
+/** DRY-RUN inventory/availability pre-check before confirming + charging. */
+export async function precheckRemoteOrder(body: Record<string, unknown>): Promise<{ ok: boolean; soldOut: string[]; unknownItems: string[]; reason: string | null }> {
+  return call("POST", "/api/orders/precheck", body);
 }
 
 /** Usable stock per ingredient: sum of non-expired batches. */
