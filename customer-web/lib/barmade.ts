@@ -145,10 +145,10 @@ export async function createRemoteOrder(body: Record<string, unknown>): Promise<
 
 export async function getRemoteOrder(id: string): Promise<LiveOrder | null> {
   if (!id || id.includes("/")) return null;
-  if (firestoreConfigured()) {
-    const snap = await firestore().collection(`${STATE}/orders`).doc(id).get();
-    return snap.exists ? ({ id: snap.id, ...snap.data() } as LiveOrder) : null;
-  }
+  // Orders live in the BarMade backend (source of truth), NOT in Firestore.
+  // Firestore only holds menu/inventory state (barmade/state/*) and the
+  // customer-app order "meta" (barmade-orders.ts), so an order id must always
+  // be resolved against the API — even when Firestore is configured.
   try {
     return await call<LiveOrder>("GET", `/api/orders/${encodeURIComponent(id)}`);
   } catch (err) {
@@ -160,12 +160,8 @@ export async function getRemoteOrder(id: string): Promise<LiveOrder | null> {
 export async function getRemoteOrders(ids: string[]): Promise<Map<string, LiveOrder>> {
   const out = new Map<string, LiveOrder>();
   if (!ids.length) return out;
-  if (firestoreConfigured()) {
-    const col = firestore().collection(`${STATE}/orders`);
-    const snaps = await firestore().getAll(...ids.map((id) => col.doc(id)));
-    for (const s of snaps) if (s.exists) out.set(s.id, { id: s.id, ...s.data() } as LiveOrder);
-    return out;
-  }
+  // Always resolve orders against the backend API (source of truth), not
+  // Firestore — Firestore holds menu/inventory, not the orders themselves.
   await Promise.all(ids.map(async (id) => {
     const o = await getRemoteOrder(id);
     if (o) out.set(id, o);
