@@ -11,7 +11,7 @@ import os
 
 import httpx
 
-DEFAULT_URL = "https://barmade-api.onrender.com"
+DEFAULT_URL = "https://barmade-riw5.onrender.com"   # moved from barmade-api.onrender.com on 2026-10-07
 
 
 class BarMadeError(Exception):

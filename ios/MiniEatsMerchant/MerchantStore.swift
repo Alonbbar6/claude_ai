@@ -19,7 +19,7 @@ final class MerchantStore {
 
     /// BarMade kitchen API; picked like a restaurant under `barMadeId`.
     static let barMadeId = "barmade"
-    static let defaultBarMadeServer = "https://barmade-api.onrender.com"
+    static let defaultBarMadeServer = "https://barmade-riw5.onrender.com"   // moved from barmade-api 2026-10-07
 
     private(set) var serverURL: String
     private(set) var barMadeServerURL: String

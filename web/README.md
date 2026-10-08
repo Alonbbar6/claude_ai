@@ -41,7 +41,7 @@ order. If BarMade is unreachable the site runs on seed data.
 | Variable | Default | Meaning |
 |---|---|---|
 | `BARMADE_SYNC` | `on` | `off` = fully standalone, no network calls |
-| `BARMADE_URL` | `https://barmade-api.onrender.com` | where to read from |
+| `BARMADE_URL` | `https://barmade-riw5.onrender.com` | where to read from (the old `barmade-api` host is gone) |
 | `BARMADE_WRITES` | `off` | `on` = forward classroom orders with `POST /api/orders`. Only against a demo tenant agreed with the backend owner. |
 | `BARMADE_DEMO_CONDITIONS` | `on` | `off` = don't stage the mozzarella/chicken scenario |
 

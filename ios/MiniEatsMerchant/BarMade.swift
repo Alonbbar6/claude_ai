@@ -1,6 +1,6 @@
 import Foundation
 
-// BarMade kitchen API (https://barmade-api.onrender.com): batch-tracked
+// BarMade kitchen API (https://barmade-riw5.onrender.com): batch-tracked
 // inventory, menu recipes, orders and expiry alerts, stored in Firestore.
 // Read-only from the merchant app.
 
