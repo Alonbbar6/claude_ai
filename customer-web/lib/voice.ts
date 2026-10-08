@@ -18,6 +18,8 @@ import { avoidConflicts } from "./diet";
 // Voice needs a fast answer; VOICE_MODEL lets you pick a quicker model for this route only.
 const MODEL = process.env.VOICE_MODEL?.trim() || process.env.ANTHROPIC_MODEL?.trim() || "claude-opus-5-5";
 const MAX_QTY = 20;
+// The mic bubble is small; replies must fit this many characters as complete sentences.
+const REPLY_MAX = 200;
 const AVOIDABLE: Allergen[] = ["dairy", "gluten", "egg", "fish", "pork", "meat"];
 
 const Output = z.object({
@@ -140,7 +142,8 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
       "they refer to (from proposed, or from the dishes named in that reply). Dishes in added are ALREADY in the cart: " +
       "never add them again unless they clearly ask for more; if they only confirm, return unknown and say it's already " +
       "in their cart and they can tap Review order.\n" +
-      "Keep the reply under 200 characters, at most two sentences, plain text. " +
+      `The reply is at most ${REPLY_MAX} characters including spaces, plain text, one or two sentences. Plan it to ` +
+      "fit: as you get close to the limit, wrap up with a complete closing sentence. Never leave a sentence unfinished. " +
       `Reply in ${lang === "es" ? "Spanish" : "English"}.`,
     messages: [
       {
@@ -189,6 +192,7 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
       lookup.set(`${r.id}:${d.id}`, { dishId: d.id, restaurantId: r.id, name: d.name, image: d.image, open: false });
   const matches = [...new Set(out.matches)].flatMap((id) => lookup.get(id) ?? []).slice(0, 4);
 
+  const reply = trimmed ? MEAL_TRIMMED[lang][merged.size ? "fits" : "none"] : (await fitReply(client, out.reply, lang)) || FALLBACK[lang];
   return {
     // Nothing clear to add but likely dishes to pick from → show them as choices.
     intent: (out.intent === "add_to_order" || building) && merged.size === 0 ? (matches.length ? "find_dish" : "unknown") : out.intent,
@@ -198,15 +202,41 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
     fulfillment: out.fulfillment === "unspecified" ? null : out.fulfillment,
     tableNumber: out.tableNumber.trim().replace(/[^\w-]/g, "").slice(0, 8) || null,
     matches,
-    reply: trimmed ? MEAL_TRIMMED[lang][merged.size ? "fits" : "none"] : shorten(out.reply) || FALLBACK[lang],
+    reply,
   };
 }
 
-/** Keep the reply readable on a phone without cutting a sentence (or a word) in half. */
-function shorten(reply: string, max = 320) {
-  const s = reply.trim().replace(/\s+/g, " ");
-  if (s.length <= max) return s;
-  const cut = s.slice(0, max);
-  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
-  return end > 60 ? cut.slice(0, end + 1) : cut.slice(0, cut.lastIndexOf(" ")) + "…";
+/**
+ * A reply over REPLY_MAX is rewritten shorter by the model (same meaning, complete sentences) instead of being cut.
+ * Only if the rewrite still doesn't fit are whole trailing sentences dropped; a sentence is never cut in half.
+ */
+async function fitReply(client: Anthropic, reply: string, lang: Lang): Promise<string> {
+  let s = reply.trim().replace(/\s+/g, " ");
+  if (s.length <= REPLY_MAX) return s;
+  try {
+    const res = await client.beta.messages.parse({
+      model: MODEL,
+      max_tokens: 400,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "low", format: betaZodOutputFormat(z.object({ reply: z.string() })) },
+      system:
+        `Rewrite the restaurant assistant's message in at most ${REPLY_MAX} characters including spaces. Keep its ` +
+        "meaning, the dish names and any question it asks; drop filler. Use complete sentences, plain text, " +
+        `${lang === "es" ? "Spanish" : "English"}. Do not add facts.`,
+      messages: [{ role: "user", content: s }],
+    });
+    const short = res.parsed_output?.reply.trim().replace(/\s+/g, " ");
+    if (short && short.length < s.length) s = short;
+  } catch {
+    // keep the original; the sentence fallback below still applies
+  }
+  if (s.length <= REPLY_MAX) return s;
+  const sentences = s.match(/[^.!?]+[.!?]+["”»)]*\s*/g) ?? [s];
+  let kept = "";
+  for (const x of sentences) {
+    if ((kept + x).trim().length > REPLY_MAX) break;
+    kept += x;
+  }
+  return kept.trim() || s; // one long sentence is shown whole rather than cut
 }
