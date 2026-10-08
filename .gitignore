@@ -1,0 +1,22 @@
+# dependencies & build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# env & secrets
+.env
+.env.local
+backend/.env
+manager-web/.env
+
+# dev logs & scratch
+_dev-*.log
+*.mjs.log
+_screenshots/
+
+# prisma local
+backend/.prisma/
+
+# OS
+.DS_Store
+Thumbs.db
