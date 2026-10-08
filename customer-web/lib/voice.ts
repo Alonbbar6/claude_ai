@@ -78,7 +78,9 @@ export async function interpret(text: string, lang: Lang): Promise<VoiceResult> 
       "You are the voice ordering helper of BarMade, a restaurant ordering web app. The customer spoke a sentence " +
       "(speech-to-text, so expect small transcription errors and number words like 'two'/'dos'). Map it to an intent:\n" +
       "- add_to_order: they want dishes. Put only dishes from the OPEN restaurant that are not soldOut in items, " +
-      "with quantities (default 1). Set fulfillment if they say to go / take away / para llevar (to_go) or " +
+      "with quantities (default 1). Only add a dish when what they said clearly names it (allowing for small " +
+      "transcription errors). If a word could be more than one dish, or names nothing on the menu, do NOT add a " +
+      "guess: put the likely dish ids in matches and ask in the reply which one they meant. Set fulfillment if they say to go / take away / para llevar (to_go) or " +
       "for here / eat here / para comer aquí (for_here), else unspecified. tableNumber only if they say one, else empty.\n" +
       "- find_dish: they ask where/what to eat or for restaurants with some dish. Put matching dish ids from any " +
       "restaurant in matches (closed ones too). If the best match is closed, say it opens at 5 PM and suggest a similar " +
@@ -114,7 +116,8 @@ export async function interpret(text: string, lang: Lang): Promise<VoiceResult> 
   const matches = [...new Set(out.matches)].flatMap((id) => lookup.get(id) ?? []).slice(0, 4);
 
   return {
-    intent: out.intent === "add_to_order" && merged.size === 0 ? "unknown" : out.intent,
+    // Nothing clear to add but likely dishes to pick from → show them as choices.
+    intent: out.intent === "add_to_order" && merged.size === 0 ? (matches.length ? "find_dish" : "unknown") : out.intent,
     items: [...merged].filter(([, q]) => q > 0).map(([dishId, quantity]) => ({ dishId, quantity })),
     fulfillment: out.fulfillment === "unspecified" ? null : out.fulfillment,
     tableNumber: out.tableNumber.trim().replace(/[^\w-]/g, "").slice(0, 8) || null,
