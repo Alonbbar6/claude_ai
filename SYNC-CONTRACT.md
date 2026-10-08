@@ -1,75 +1,60 @@
-# Sync Contract — customer frontend ↔ manager backend
+# BarMade sync contract — customer app ↔ this backend
 
-The customer-facing ordering app (your teammate's part) talks to **this** backend over HTTP.
-This is the whole seam. When her app is ready, point it at the backend base URL and use these
-two endpoints. Everything else on the backend is manager-side.
+This backend is the **single source of truth** (menu, inventory, orders, status).
+The customer web app (`Alonbbar6/claude_ai` → `customer-web`) places orders here;
+the manager dashboard reads/writes the same backend.
 
-Base URL: `http://localhost:4000` locally, or the Railway backend URL in production.
+## Place an order — `POST /api/orders`
 
-## 1. Get the menu
-
-```
-GET /api/menu
-```
-
-Returns menu items with their canonical `key` (the `item_id` used when ordering), name,
-category, price, and `modifierIds`. Render the menu from this so item names/prices never drift.
-
-```jsonc
-[
-  { "id": "MENU-001", "key": "pizza_margherita", "name": "Margherita Pizza",
-    "category": "Pizza", "price": 15.99, "modifierIds": ["extra_cheese", "no_cheese"] }
-]
-```
-
-## 2. Submit an order (the canonical order shape)
-
-```
-POST /api/orders
-Content-Type: application/json
-```
-
-The customer app chooses a **channel** first, then dishes. Send exactly this shape:
+Accepts **both** dialects (field names interchangeable):
 
 ```jsonc
 {
-  "channel": "uber_eats",          // dine_in | takeout | website | uber_eats | doordash | barmade
-  "placed_at": "2026-10-07T19:42:00Z", // optional ISO; defaults to now
   "items": [
-    { "item_id": "pizza_margherita", "quantity": 2, "modifiers": ["extra_cheese"] }
-  ]
+    { "menuItemId": "MENU-001", "quantity": 2 }   // customer-app dialect
+    // or { "item_id": "pizza_margherita", "quantity": 2 }  // internal dialect
+  ],
+  "channel": "barmade",            // optional, defaults to "barmade"
+  "source": "barmade-web",         // marks the order as customer-placed
+  "fulfillment": "to_go",          // "to_go" | "for_here"
+  "tableNumber": null,
+  "customerName": "María",
+  "customerId": "uuid"
 }
 ```
 
-`item_id` **must** be the menu `key` from `GET /api/menu`. The backend:
-1. prices the order (channel fee applied automatically per channel),
-2. deducts ingredients via each dish's recipe (inventory depletion),
-3. raises a low-stock alert if any ingredient crosses its reorder point.
+`menuItemId` resolves against the MenuItem **id** OR **key**. Unavailable (86'd)
+dishes and stock shortfalls are rejected.
 
-Response (201):
+**Success** → `201`:
+```json
+{ "data": { "id": "ORD-123", "status": "RECEIVED", "createdAt": "...", "items": [...], "total": 34.97, "consumed": [...] } }
+```
+Customer-placed orders start **RECEIVED**. Internal/simulated orders complete immediately.
 
-```jsonc
-{
-  "orderId": "ORD-07320",
-  "channel": "uber_eats",
-  "businessDate": "2026-10-07",
-  "gross": 31.98,
-  "channelFee": 9.59,
-  "net": 22.39,
-  "alertsRaised": ["ALERT-015"]
-}
+**Shortage** → `409`:
+```json
+{ "error": { "code": "INSUFFICIENT_INVENTORY", "message": "...", "details": { "ingredientIds": [...], "menuItemIds": [...] } } }
 ```
 
-Errors return `{ "error": "message" }` with status 400 (bad item key / shape) or 500.
+## Track an order — `GET /api/orders/:id`
+`{ "data": { id, status, createdAt, updatedAt, statusHistory, total, items } }`.
+Customer tracking screen polls this ~every 3s.
 
-## CORS
+## Move an order — `PATCH /api/orders/:id/status`
+Body `{ "status": "PREPARING" }`. Lifecycle:
+`RECEIVED → PREPARING → READY → COMPLETED` (CANCELLED from any non-terminal).
+Invalid moves → `409 INVALID_TRANSITION`. Accepts spelling variants
+(PENDING/NEW→RECEIVED, IN_PROGRESS→PREPARING, PICKED_UP/SERVED→COMPLETED, CANCELED→CANCELLED).
+Each change appends `{status, at}` to `statusHistory` and sets `updatedAt`.
 
-The backend allows origins from `CORS_ORIGINS` in `backend/.env`
-(default `http://localhost:5173,http://localhost:5174`). Add her dev origin there — e.g. if her
-app runs on `http://localhost:5174` it already works; otherwise append her URL.
+## Read menu / stock (read-only)
+- `GET /api/menu` — items with `available`, price, `recipeLines`. `available:false` = sold out.
+- `GET /api/inventory` — live stock per ingredient (packs + base units), status.
 
-## That's it
+## Health
+`GET /api/health` → `{ "ok": true, "db": "postgres", "orders": "barmade-api", "ai": <bool> }`.
 
-She only needs `GET /api/menu` and `POST /api/orders`. The manager dashboard reads the same
-database and reflects her orders live (press refresh / Simulate rush shows the mechanism).
-When you're both ready to merge, we just deploy both apps to Railway against the same Postgres.
+## Connection
+Customer app sets `BARMADE_API_URL` = this backend's public URL.
+Manager app sets `VITE_API_URL` = the same URL. See `DEPLOY-RAILWAY.md`.
