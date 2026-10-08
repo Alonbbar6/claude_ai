@@ -48,7 +48,9 @@ export interface LiveInventoryItem {
   name: string;
   unit: string;
   reorderPoint?: number;
-  batches: { batchId?: string; quantity: number; expiresAt?: string }[];
+  /** The BarMade API returns a flat currentStock; Firestore returned batches[]. */
+  currentStock?: number;
+  batches?: { batchId?: string; quantity: number; expiresAt?: string }[];
 }
 
 export interface RestaurantStatus {
@@ -154,14 +156,17 @@ export async function precheckRemoteOrder(body: Record<string, unknown>): Promis
   return call("POST", "/api/orders/precheck", body);
 }
 
-/** Usable stock per ingredient: sum of non-expired batches. */
+/** Usable stock per ingredient. The BarMade API returns a flat `currentStock`;
+ *  older Firestore data returned non-expired `batches[]`. Support both. */
 export function liveStock(inventory: LiveInventoryItem[], now = Date.now()): Map<string, number> {
   return new Map(
     inventory.map((i) => [
       i.id,
-      (i.batches ?? [])
-        .filter((b) => !b.expiresAt || Date.parse(b.expiresAt) > now)
-        .reduce((s, b) => s + Number(b.quantity || 0), 0),
+      typeof i.currentStock === "number"
+        ? Number(i.currentStock)
+        : (i.batches ?? [])
+            .filter((b) => !b.expiresAt || Date.parse(b.expiresAt) > now)
+            .reduce((s, b) => s + Number(b.quantity || 0), 0),
     ]),
   );
 }
