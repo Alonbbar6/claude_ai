@@ -54,7 +54,29 @@ const FALLBACK: Record<Lang, string> = {
   es: "Perdón, no te entendí. Prueba “dos Margheritas y una Coca-Cola, para llevar”.",
 };
 
-export async function interpret(text: string, lang: Lang, profileAvoid: Allergen[] = []): Promise<VoiceResult> {
+/** One earlier exchange in the same mic session, so follow-ups like "yes, add it" have context. */
+export interface VoiceTurn {
+  said: string;
+  reply: string;
+  /** dishes proposed (shown as a meal or as choices) but not in the cart */
+  proposed: string[];
+  /** what that turn actually put in the cart */
+  added: { dishId: string; quantity: number }[];
+}
+
+export function cleanHistory(v: unknown): VoiceTurn[] {
+  const ids = (x: unknown) => (Array.isArray(x) ? x : []).filter((i): i is string => typeof i === "string").slice(0, 8).map((i) => i.slice(0, 60));
+  return (Array.isArray(v) ? v : []).slice(-2).flatMap((t) => {
+    if (!t || typeof t.said !== "string") return [];
+    const added = (Array.isArray(t.added) ? t.added : [])
+      .filter((a: { dishId?: unknown; quantity?: unknown }) => typeof a?.dishId === "string" && Number(a.quantity) > 0)
+      .slice(0, 8)
+      .map((a: { dishId: string; quantity: unknown }) => ({ dishId: a.dishId.slice(0, 60), quantity: Math.min(MAX_QTY, Math.round(Number(a.quantity))) }));
+    return [{ said: t.said.slice(0, 300), reply: String(t.reply ?? "").slice(0, 600), proposed: ids(t.proposed), added }];
+  });
+}
+
+export async function interpret(text: string, lang: Lang, profileAvoid: Allergen[] = [], history: VoiceTurn[] = []): Promise<VoiceResult> {
   const empty: VoiceResult = { intent: "unknown", items: [], total: null, budget: null, fulfillment: null, tableNumber: null, matches: [], reply: FALLBACK[lang] };
   if (!process.env.ANTHROPIC_API_KEY) return empty;
 
@@ -103,7 +125,8 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
       "and a drink or starter or dessert when the budget allows), most important first. Respect what they avoid and the " +
       `customer's saved avoid list ${JSON.stringify(profileAvoid)}, using each dish's allergens. Set budget if they gave ` +
       "one (else 0) and fill avoid with what they said to avoid. Code checks the budget and the allergens and computes " +
-      "the total, so never state prices or totals in the reply: describe the meal in a few words. If nothing fits, " +
+      "the total, so never state prices or totals in the reply. The dishes go straight into the cart, so say you " +
+      "added them (not 'how about…') and describe the meal in a few words. If nothing fits, " +
       "return no items and say so.\n" +
       "- find_dish: they ask where/what to eat or for restaurants with some dish. Put matching dish ids from any " +
       "restaurant in matches (closed ones too). If the best match is closed, say it opens at 5 PM and suggest a similar " +
@@ -111,11 +134,21 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
       "- unknown: anything else.\n" +
       "If they ask for something sold out or not on the menu, say so briefly and suggest an alternative. Never invent " +
       "dishes, prices or ids. The reply is shown on screen: one or two short, warm sentences, and for add_to_order " +
-      `remind them to review and confirm their order. Reply in ${lang === "es" ? "Spanish" : "English"}.`,
+      "remind them to review and confirm their order.\n" +
+      "previous_turns (if any) are earlier sentences in this same conversation, oldest first. Use them to resolve " +
+      "follow-ups like 'yes', 'add it', 'add that meal', 'make it three': for those, return add_to_order with the dishes " +
+      "they refer to (from proposed, or from the dishes named in that reply). Dishes in added are ALREADY in the cart: " +
+      "never add them again unless they clearly ask for more; if they only confirm, return unknown and say it's already " +
+      "in their cart and they can tap Review order.\n" +
+      "Keep the reply under 200 characters, at most two sentences, plain text. " +
+      `Reply in ${lang === "es" ? "Spanish" : "English"}.`,
     messages: [
       {
         role: "user",
-        content: `<menu>${JSON.stringify(catalog)}</menu>\n<customer_said>${text.slice(0, 300)}</customer_said>`,
+        content:
+          `<menu>${JSON.stringify(catalog)}</menu>\n` +
+          (history.length ? `<previous_turns>${JSON.stringify(history)}</previous_turns>\n` : "") +
+          `<customer_said>${text.slice(0, 300)}</customer_said>`,
       },
     ],
   });
@@ -165,6 +198,15 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
     fulfillment: out.fulfillment === "unspecified" ? null : out.fulfillment,
     tableNumber: out.tableNumber.trim().replace(/[^\w-]/g, "").slice(0, 8) || null,
     matches,
-    reply: trimmed ? MEAL_TRIMMED[lang][merged.size ? "fits" : "none"] : out.reply.trim().slice(0, 300) || FALLBACK[lang],
+    reply: trimmed ? MEAL_TRIMMED[lang][merged.size ? "fits" : "none"] : shorten(out.reply) || FALLBACK[lang],
   };
+}
+
+/** Keep the reply readable on a phone without cutting a sentence (or a word) in half. */
+function shorten(reply: string, max = 320) {
+  const s = reply.trim().replace(/\s+/g, " ");
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  return end > 60 ? cut.slice(0, end + 1) : cut.slice(0, cut.lastIndexOf(" ")) + "…";
 }

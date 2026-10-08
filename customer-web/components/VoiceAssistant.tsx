@@ -44,6 +44,8 @@ export function VoiceAssistant({
   const [open, setOpen] = useState(false);
   // What the last voice request put in the cart, so the customer can see it and undo it.
   const [added, setAdded] = useState<{ dish: ViewDish; quantity: number }[]>([]);
+  // The last exchanges while the bubble stays open, so "yes, add it" knows what "it" is.
+  const [history, setHistory] = useState<{ said: string; reply: string; proposed: string[]; added: { dishId: string; quantity: number }[] }[]>([]);
 
   if (!speech.supported) return null;
 
@@ -56,13 +58,13 @@ export function VoiceAssistant({
       const res = await fetch("/api/voice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, lang, avoid }),
+        body: JSON.stringify({ text, lang, avoid, history }),
       });
       if (!res.ok) throw new Error();
       const r: VoiceResult = await res.json();
       setResult(r);
+      const done: typeof added = [];
       if ((r.intent === "add_to_order" || r.intent === "build_meal") && r.items.length) {
-        const done: typeof added = [];
         for (const it of r.items) {
           const d = dishes.find((x) => x.id === it.dishId);
           if (!d) continue;
@@ -75,6 +77,13 @@ export function VoiceAssistant({
         }
         setAdded(done);
       }
+      const turn = {
+        said: text,
+        reply: r.reply,
+        proposed: r.matches.filter((m) => m.open).map((m) => m.dishId),
+        added: done.map((a) => ({ dishId: a.dish.id, quantity: a.quantity })),
+      };
+      setHistory((h) => [...h, turn].slice(-2));
     } catch {
       setResult({ intent: "unknown", items: [], total: null, budget: null, fulfillment: null, tableNumber: null, matches: [], reply: t("voice.error.other") });
     } finally {
@@ -90,6 +99,10 @@ export function VoiceAssistant({
     setAdded([]);
     setResult(null);
     setHeard("");
+    // Undone dishes are back to "proposed", so a later "add it" can bring them back.
+    setHistory((h) =>
+      h.map((x, i) => (i === h.length - 1 ? { ...x, proposed: [...x.proposed, ...x.added.map((a) => a.dishId)], added: [] } : x)),
+    );
   }
 
   function toggle() {
@@ -108,7 +121,13 @@ export function VoiceAssistant({
     <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2 sm:bottom-28 sm:right-6">
       {showBubble && (
         <div className="relative w-[min(22rem,calc(100vw-2rem))] rounded-2xl bg-night p-4 text-sm text-white shadow-2xl" aria-live="polite">
-          <button type="button" onClick={() => setOpen(false)} aria-label={t("menu.close")} className="absolute right-2 top-2 h-7 w-7 rounded-full text-white/60 hover:bg-white/10">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setHistory([]);
+            }}
+            aria-label={t("menu.close")} className="absolute right-2 top-2 h-7 w-7 rounded-full text-white/60 hover:bg-white/10">
             ✕
           </button>
           {speech.listening ? (
