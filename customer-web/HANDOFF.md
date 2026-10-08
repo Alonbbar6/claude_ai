@@ -30,6 +30,8 @@ The customer app never writes to `barmade/state/*`.
 | `FIREBASE_PROJECT_ID` | Yes | `barmade1-7be2b` |
 | `ANTHROPIC_API_KEY` | Recommended | Claude key for the "Picked for you" suggestions (without it, rule-based suggestions are used). **Required for voice ordering**: without it the mic only answers "Sorry, I couldn't understand that". |
 | `ANTHROPIC_MODEL` | No | Defaults to `claude-opus-5-5`. |
+| `AI_PROVIDER` | No | `gemini` to use Google Gemini instead of Claude for suggestions and voice (needs `GEMINI_API_KEY`). If only `GEMINI_API_KEY` is set, Gemini is used automatically. |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | No | Gemini key and model (default `gemini-3.5-flash`, retries once with `gemini-3.5-flash-lite` if busy). |
 | `NEXT_PUBLIC_VOICE_ORDERING` | No | `on` shows the 🎤 voice-ordering button on the menu (Chrome / Safari). Read at **build** time, so redeploy after changing it. Off by default. |
 | `VOICE_MODEL` | No | Model for voice only (defaults to `ANTHROPIC_MODEL`). |
 

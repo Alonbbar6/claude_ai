@@ -1,6 +1,5 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { aiProvider, structured } from "./ai";
 import { z } from "zod";
 import { getMenu } from "./catalog";
 import { RESTAURANTS, TRATTORIA_ID } from "./content";
@@ -85,7 +84,7 @@ export function cleanHistory(v: unknown): VoiceTurn[] {
 
 export async function interpret(text: string, lang: Lang, profileAvoid: Allergen[] = [], history: VoiceTurn[] = []): Promise<VoiceResult> {
   const empty: VoiceResult = { intent: "unknown", items: [], total: null, budget: null, fulfillment: null, tableNumber: null, matches: [], reply: FALLBACK[lang] };
-  if (!process.env.ANTHROPIC_API_KEY) return empty;
+  if (!aiProvider()) return empty;
 
   const menu = await getMenu();
   const open = RESTAURANTS.find((r) => r.id === TRATTORIA_ID)!;
@@ -112,13 +111,11 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
     })),
   ];
 
-  const client = new Anthropic({ timeout: 15_000, maxRetries: 1 });
-  const res = await client.beta.messages.parse({
-    model: MODEL,
-    max_tokens: 2000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { effort: "low", format: betaZodOutputFormat(Output) },
+  const out = await structured({
+    schema: Output,
+    maxTokens: 2000,
+    timeoutMs: 15_000,
+    claudeModel: MODEL,
     system:
       "You are the voice ordering helper of BarMade, a restaurant ordering web app. The customer spoke a sentence " +
       "(speech-to-text, so expect small transcription errors and number words like 'two'/'dos'). Map it to an intent:\n" +
@@ -150,23 +147,17 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
       `The reply is at most ${REPLY_MAX} characters including spaces, plain text, one or two sentences. Plan it to ` +
       "fit: as you get close to the limit, wrap up with a complete closing sentence. Never leave a sentence unfinished. " +
       `Reply in ${lang === "es" ? "Spanish" : "English"}.`,
-    messages: [
-      {
-        role: "user",
-        content:
+    user:
           `<menu>${JSON.stringify(catalog)}</menu>\n` +
           (history.length ? `<previous_turns>${JSON.stringify(history)}</previous_turns>\n` : "") +
           `<customer_said>${text.slice(0, 300)}</customer_said>`,
-      },
-    ],
   }).catch((err: unknown) => {
     // e.g. out of API credit, rate limit, network: answer politely instead of failing the request
-    console.error("voice: Claude unavailable", err instanceof Error ? err.message : err);
-    return null;
+    console.error("voice: AI unavailable", err instanceof Error ? err.message : err);
+    return undefined;
   });
-  if (!res) return { ...empty, reply: UNAVAILABLE[lang] };
-  if (res.stop_reason === "refusal" || !res.parsed_output) return empty;
-  const out = res.parsed_output;
+  if (out === undefined) return { ...empty, reply: UNAVAILABLE[lang] };
+  if (!out) return empty;
 
   // ---- validate everything Claude proposed against the live menu
   const byId = new Map(orderable.map((d) => [d.id, d]));
@@ -202,7 +193,7 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
       lookup.set(`${r.id}:${d.id}`, { dishId: d.id, restaurantId: r.id, name: d.name, image: d.image, open: false });
   const matches = [...new Set(out.matches)].flatMap((id) => lookup.get(id) ?? []).slice(0, 4);
 
-  const reply = trimmed ? MEAL_TRIMMED[lang][merged.size ? "fits" : "none"] : (await fitReply(client, out.reply, lang)) || FALLBACK[lang];
+  const reply = trimmed ? MEAL_TRIMMED[lang][merged.size ? "fits" : "none"] : (await fitReply(out.reply, lang)) || FALLBACK[lang];
   return {
     // Nothing clear to add but likely dishes to pick from → show them as choices.
     intent: (out.intent === "add_to_order" || building) && merged.size === 0 ? (matches.length ? "find_dish" : "unknown") : out.intent,
@@ -220,23 +211,22 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
  * A reply over REPLY_MAX is rewritten shorter by the model (same meaning, complete sentences) instead of being cut.
  * Only if the rewrite still doesn't fit are whole trailing sentences dropped; a sentence is never cut in half.
  */
-async function fitReply(client: Anthropic, reply: string, lang: Lang): Promise<string> {
+async function fitReply(reply: string, lang: Lang): Promise<string> {
   let s = reply.trim().replace(/\s+/g, " ");
   if (s.length <= REPLY_MAX) return s;
   try {
-    const res = await client.beta.messages.parse({
-      model: MODEL,
-      max_tokens: 400,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "low", format: betaZodOutputFormat(z.object({ reply: z.string() })) },
+    const res = await structured({
+      schema: z.object({ reply: z.string() }),
+      maxTokens: 400,
+      timeoutMs: 10_000,
+      claudeModel: MODEL,
       system:
         `Rewrite the restaurant assistant's message in at most ${REPLY_MAX} characters including spaces. Keep its ` +
         "meaning, the dish names and any question it asks; drop filler. Use complete sentences, plain text, " +
         `${lang === "es" ? "Spanish" : "English"}. Do not add facts.`,
-      messages: [{ role: "user", content: s }],
+      user: s,
     });
-    const short = res.parsed_output?.reply.trim().replace(/\s+/g, " ");
+    const short = res?.reply.trim().replace(/\s+/g, " ");
     if (short && short.length < s.length) s = short;
   } catch {
     // keep the original; the sentence fallback below still applies
