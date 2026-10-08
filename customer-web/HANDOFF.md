@@ -54,7 +54,12 @@ With `NEXT_PUBLIC_VOICE_ORDERING=on`, a 🎤 button appears on the Trattoria men
 "two Margheritas and a Coke, to go" (English or Spanish). Claude turns it into cart items, the server checks them
 against the live menu and stock, and the mic bubble lists **exactly what was added**, with **Undo** and **Review order**
 (which opens the cart with to go / for here and the table pre-set). If a word is unclear or not on the menu, nothing is
-added: the likely dishes appear as choices to tap. Voice never places an order by itself. Questions like "where can I get sushi?" show matching dishes, including closed restaurants. The mic
+added: the likely dishes appear as choices to tap. Voice never places an order by itself.
+
+It can also **build a meal**: "dinner for two under $40, no pork". Claude picks the dishes; code removes anything sold
+out or containing what the customer avoids (their saved list plus what they said), trims to the budget and computes the
+total (PRD: the AI never calculates). The saved avoid list (Tastes → "Anything to avoid?") also reshapes the menu:
+clashing dishes get a ⚠ chip, sort last and can be hidden. Questions like "where can I get sushi?" show matching dishes, including closed restaurants. The mic
 needs HTTPS (Railway provides it) and the browser's microphone permission.
 
 ## Before the demo
