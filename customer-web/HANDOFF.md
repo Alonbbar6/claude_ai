@@ -29,6 +29,8 @@ The customer app never writes to `barmade/state/*`.
 | `FIREBASE_PROJECT_ID` | Yes | `barmade1-7be2b` |
 | `ANTHROPIC_API_KEY` | Recommended | Claude key for the "Picked for you" suggestions. Without it, rule-based suggestions are used. |
 | `ANTHROPIC_MODEL` | No | Defaults to `claude-opus-5-5`. |
+| `NEXT_PUBLIC_VOICE_ORDERING` | No | `on` shows the 🎤 voice-ordering button on the menu (Chrome / Safari). Read at **build** time, so redeploy after changing it. Off by default. |
+| `VOICE_MODEL` | No | Model for voice only (defaults to `ANTHROPIC_MODEL`). |
 
 5. **Settings → Networking → Generate Domain**. That URL is the one for the QR code.
 6. **Check it:** open `https://<domain>/api/health`. It should return:
@@ -41,8 +43,19 @@ The customer app never writes to `barmade/state/*`.
    It is **read-only** against the real backend (health, menu, suggestions). Add `--write` to place ONE real
    test order (a Coca-Cola). That deducts real inventory, so only do it on purpose.
 
+## Voice ordering (optional)
+
+With `NEXT_PUBLIC_VOICE_ORDERING=on`, a 🎤 button appears on the Trattoria menu. The customer says
+"two Margheritas and a Coke, to go" (English or Spanish). Claude turns it into cart items, the server checks them
+against the live menu and stock, and the **cart opens pre-filled for a one-tap confirm**. Voice never places an
+order by itself. Questions like "where can I get sushi?" show matching dishes, including closed restaurants. The mic
+needs HTTPS (Railway provides it) and the browser's microphone permission.
+
 ## Before the demo
 
+- **Firestore free tier: ~50k reads/day for the whole team.** It ran out once during testing (every backend call
+  failed until the daily reset, midnight Pacific). The customer app caches reads, but keep dashboards that poll
+  Firestore to a minimum on demo day, or switch the Firebase project to the pay-as-you-go plan.
 - **Wake Render up ~2 minutes before presenting**: open `https://barmade-riw5.onrender.com/api/menu`. On the
   free tier the first request after a nap takes ~50 s. The customer app also pings it every few minutes while
   someone is browsing.

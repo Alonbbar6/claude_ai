@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getMenu } from "./catalog";
 import { RESTAURANTS, TRATTORIA_ID } from "./content";
 import type { Lang } from "./i18n";
+import type { Localized } from "./content";
 
 /**
  * Voice/text intent → cart actions. Claude only proposes; code validates every dish id,
@@ -30,7 +31,7 @@ export interface VoiceResult {
   items: { dishId: string; quantity: number }[];
   fulfillment: "to_go" | "for_here" | null;
   tableNumber: string | null;
-  matches: { dishId: string; restaurantId: string }[];
+  matches: { dishId: string; restaurantId: string; name: Localized; image: string; open: boolean }[];
   reply: string;
 }
 
@@ -105,14 +106,12 @@ export async function interpret(text: string, lang: Lang): Promise<VoiceResult> 
     const q = Math.max(1, Math.min(MAX_QTY, Math.round(Number(it.quantity) || 1)));
     merged.set(d.id, Math.min((merged.get(d.id) ?? 0) + q, d.servingsLeft));
   }
-  const known = new Set([
-    ...menu.dishes.map((d) => d.id),
-    ...RESTAURANTS.flatMap((r) => (r.dishes ?? []).map((d) => `${r.id}:${d.id}`)),
-  ]);
-  const matches = [...new Set(out.matches)]
-    .filter((id) => known.has(id))
-    .slice(0, 4)
-    .map((id) => (id.includes(":") ? { restaurantId: id.split(":")[0], dishId: id.split(":")[1] } : { restaurantId: TRATTORIA_ID, dishId: id }));
+  const lookup = new Map<string, VoiceResult["matches"][number]>();
+  for (const d of menu.dishes) lookup.set(d.id, { dishId: d.id, restaurantId: TRATTORIA_ID, name: d.name, image: d.image, open: true });
+  for (const r of RESTAURANTS)
+    for (const d of r.dishes ?? [])
+      lookup.set(`${r.id}:${d.id}`, { dishId: d.id, restaurantId: r.id, name: d.name, image: d.image, open: false });
+  const matches = [...new Set(out.matches)].flatMap((id) => lookup.get(id) ?? []).slice(0, 4);
 
   return {
     intent: out.intent === "add_to_order" && merged.size === 0 ? "unknown" : out.intent,

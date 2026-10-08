@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ViewDish, ViewRestaurant, ViewSpecial } from "@/lib/types";
 import { useApp } from "./AppProvider";
 import { DemoFooter, Header } from "./Header";
-import { CartBar, CartSheet } from "./Cart";
+import { CartBar, CartSheet, type CartPreset } from "./Cart";
 import { CloseButton, DishImage, Sheet, Stepper } from "./ui";
 import { CATEGORY_LABELS } from "@/lib/content";
 import { Gate } from "./Gate";
@@ -28,6 +28,7 @@ export function MenuView({
   const { t, L, cart } = useApp();
   const [openDish, setOpenDish] = useState<ViewDish | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [cartPreset, setCartPreset] = useState<CartPreset | null>(null);
   const canOrder = restaurant.acceptsOrders;
   const specialDish = special ? dishes.find((d) => d.id === special.dishId) : undefined;
   const closeDish = useCallback(() => setOpenDish(null), []);
@@ -159,8 +160,17 @@ export function MenuView({
 
       <DishSheet dish={openDish} canOrder={canOrder} onClose={closeDish} />
       {canOrder && <CartBar onOpen={() => setCartOpen(true)} />}
-      {canOrder && VOICE_ENABLED && <VoiceAssistant />}
-      {canOrder && <CartSheet open={cartOpen} onClose={closeCart} restaurantName={restaurant.name} />}
+      {canOrder && VOICE_ENABLED && (
+        <VoiceAssistant
+          dishes={dishes}
+          onOpenDish={setOpenDish}
+          onReviewCart={(p) => {
+            setCartPreset(p);
+            setCartOpen(true);
+          }}
+        />
+      )}
+      {canOrder && <CartSheet open={cartOpen} onClose={closeCart} restaurantName={restaurant.name} preset={cartPreset} />}
     </Gate>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "./AppProvider";
 import { CloseButton, DishImage, Sheet, Stepper } from "./ui";
 
@@ -29,7 +29,22 @@ export function CartBar({ onOpen }: { onOpen: () => void }) {
 
 type Fulfillment = "to_go" | "for_here";
 
-export function CartSheet({ open, onClose, restaurantName }: { open: boolean; onClose: () => void; restaurantName: string }) {
+export interface CartPreset {
+  fulfillment?: Fulfillment | null;
+  table?: string | null;
+}
+
+export function CartSheet({
+  open,
+  onClose,
+  restaurantName,
+  preset,
+}: {
+  open: boolean;
+  onClose: () => void;
+  restaurantName: string;
+  preset?: CartPreset | null;
+}) {
   const { cart, t, L, price, updateQty, clearCart, customer, setActiveOrderId } = useApp();
   const router = useRouter();
   const [fulfillment, setFulfillment] = useState<Fulfillment>("to_go");
@@ -37,6 +52,13 @@ export function CartSheet({ open, onClose, restaurantName }: { open: boolean; on
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const total = cart.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+
+  // Voice can pre-select "to go / for here" and the table; the customer still confirms.
+  useEffect(() => {
+    if (!open || !preset) return;
+    if (preset.fulfillment) setFulfillment(preset.fulfillment);
+    if (preset.table) setTable(preset.table);
+  }, [open, preset]);
 
   async function place() {
     if (!customer) return;
