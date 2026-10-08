@@ -19,8 +19,9 @@ from pydantic import BaseModel, Field
 from app import data, qa
 from app.barmade import BARMADE_RESTAURANT_ID, BarMadeClient, BarMadeError, BarMadeSync
 from app.catalog import CatalogService, CategoryIn, CategoryUpdate, MenuItemIn, MenuItemUpdate
-from app.data import COURIERS, RESTAURANTS, USERS
+from app.data import COURIERS, GROUPS, RESTAURANTS, USERS
 from app.demand import DemandService
+from app.groups import GroupIn, GroupService, GroupUpdate
 from app.inventory import InventoryService, OutOfStock
 from app.maps import LatLng, RouteProvider, get_provider
 from app.models import CLOSED, Channel, CreateOrderRequest, Fulfillment, Ingredient, NotificationPreferences, OrderLine, TravelMode
@@ -105,9 +106,13 @@ async def index():
 # ---- catalogue -----------------------------------------------------------
 
 @app.get("/api/restaurants")
-async def list_restaurants():
+async def list_restaurants(group_id: str | None = None):
     # Recipes are internal to the kitchen; customers don't need them.
-    return [r.model_dump(mode="json", exclude={"menu": {"__all__": {"recipe"}}}) for r in RESTAURANTS.values()]
+    return [
+        {**r.model_dump(mode="json", exclude={"menu": {"__all__": {"recipe"}}}),
+         "group": GROUPS[r.group_id].name if r.group_id in GROUPS else None}
+        for r in RESTAURANTS.values() if group_id is None or r.group_id == group_id
+    ]
 
 
 @app.get("/api/users")
@@ -504,6 +509,78 @@ async def inventory_alerts(rid: str):
     _catalog(rid)
     return _inventory().alerts_for(rid)
 
+
+
+# ---- merchant: restaurant groups (chains / multi-location owners) --------------
+
+G = "/api/groups/{gid}"
+
+
+def _groups() -> GroupService:
+    return GroupService(GROUPS, RESTAURANTS, _inventory())
+
+
+@app.get("/api/groups")
+async def list_groups():
+    return _groups().list()
+
+
+@app.post("/api/groups", status_code=201)
+async def create_group(req: GroupIn):
+    return _groups().create(req)
+
+
+@app.get(G)
+async def get_group(gid: str):
+    return _call(_groups().get, gid)
+
+
+@app.put(G)
+async def update_group(gid: str, req: GroupUpdate):
+    return _call(_groups().update, gid, req.model_dump(exclude_unset=True))
+
+
+@app.delete(G, status_code=204)
+async def delete_group(gid: str):
+    _call(_groups().delete, gid)
+
+
+class GroupMember(BaseModel):
+    restaurant_id: str
+
+
+@app.post(G + "/restaurants", status_code=201)
+async def add_group_restaurant(gid: str, req: GroupMember):
+    return _call(_groups().add_restaurant, gid, req.restaurant_id)
+
+
+@app.delete(G + "/restaurants/{rid}", status_code=204)
+async def remove_group_restaurant(gid: str, rid: str):
+    _call(_groups().remove_restaurant, gid, rid)
+
+
+@app.get(G + "/inventory")
+async def group_inventory(gid: str):
+    """Stock across every location, with transfer suggestions between kitchens."""
+    return _call(_groups().inventory, gid)
+
+
+@app.get(G + "/alerts")
+async def group_alerts(gid: str):
+    return _call(_groups().alerts, gid)
+
+
+@app.get(G + "/orders")
+async def group_orders(gid: str, open_only: bool = False):
+    svc: OrderService = app.state.orders
+    orders = _call(_groups().orders, gid, svc.orders.values(), open_only)
+    return [{**svc.with_live(o).model_dump(mode="json"), "restaurant": RESTAURANTS[o.restaurant_id].name}
+            for o in orders]
+
+
+@app.get(G + "/sales")
+async def group_sales(gid: str):
+    return _call(_groups().sales, gid, app.state.orders.orders.values())
 
 
 # ---- merchant: BarMade kitchen ---------------------------------------------
