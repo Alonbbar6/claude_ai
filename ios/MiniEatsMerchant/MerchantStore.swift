@@ -13,6 +13,9 @@ final class MerchantStore {
     private(set) var barMadeServerURL: String
     var barMade = BarMadeSnapshot()
     var barMadeError: String?
+    /// Vendors, purchase orders and cart (Railway backend only; read-only here).
+    var purchasing = BarMadePurchasing()
+    var purchasingError: String?
     private var seenAlertIds: Set<String> = []
 
     init() {
@@ -45,7 +48,25 @@ final class MerchantStore {
         } catch {
             barMadeError = error.localizedDescription
         }
+        await reloadPurchasing()
     }
+
+    /// Separate from the kitchen snapshot so a backend without vendor routes
+    /// still shows stock, menu and tickets.
+    func reloadPurchasing() async {
+        do {
+            purchasing = try await barMadeClient.purchasing()
+            purchasingError = nil
+        } catch let error as APIError where error.status == 404 {
+            purchasingError = "This BarMade server has no vendor data (purchasing lives on the Railway backend)."
+        } catch {
+            purchasingError = error.localizedDescription
+        }
+    }
+
+    func vendor(_ id: String) -> BarMadeVendor? { purchasing.vendors.first { $0.id == id } }
+    func purchaseOrder(_ id: String) -> BarMadePurchaseOrder? { purchasing.purchaseOrders.first { $0.id == id } }
+    var openPurchaseOrders: Int { purchasing.purchaseOrders.filter(\.isOpen).count }
 
     /// Moves an order on, then reloads so every screen shows it.
     /// Returns an error message, or nil on success.

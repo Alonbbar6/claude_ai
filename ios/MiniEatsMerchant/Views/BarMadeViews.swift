@@ -5,22 +5,37 @@ import SwiftUI
 /// the kitchen moves orders through their statuses.
 struct BarMadeRootView: View {
     @Environment(MerchantStore.self) private var store
+    /// `-tab vendors` (etc.) opens on that tab: handy for UI tests and screenshots.
+    @State private var tab: String = {
+        if let i = CommandLine.arguments.firstIndex(of: "-tab"), i + 1 < CommandLine.arguments.count {
+            return CommandLine.arguments[i + 1]
+        }
+        return "inventory"
+    }()
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             NavigationStack { BarMadeInventoryView() }
                 .tabItem { Label("Inventory", systemImage: "shippingbox.fill") }
                 .badge(store.barMadeProblemCount)
+                .tag("inventory")
             NavigationStack { BarMadeMenuView() }
                 .tabItem { Label("Menu", systemImage: "menucard.fill") }
+                .tag("menu")
             NavigationStack { BarMadeOrdersView() }
                 .tabItem { Label("Orders", systemImage: "receipt.fill") }
                 .badge(store.barMade.orders.filter { $0.status == "RECEIVED" }.count)
+                .tag("orders")
             NavigationStack { BarMadeAlertsView() }
                 .tabItem { Label("Alerts", systemImage: "bell.fill") }
                 .badge(store.barMadeUnreadAlerts)
-            NavigationStack { BarMadeSettingsView() }
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                .tag("alerts")
+            // Fifth and last tab: a sixth would push tabs into iOS's "More" list.
+            // Settings lives behind the gear on the Inventory screen.
+            NavigationStack { BarMadeVendorsView() }
+                .tabItem { Label("Vendors", systemImage: "storefront.fill") }
+                .badge(store.openPurchaseOrders)
+                .tag("vendors")
         }
         .tint(.brand)
         .task {
@@ -141,6 +156,12 @@ struct BarMadeInventoryView: View {
         .searchable(text: $search)
         .refreshable { await store.reload() }
         .navigationDestination(for: BarMadeIngredient.self) { BarMadeIngredientView(ingredientId: $0.id) }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { BarMadeSettingsView() } label: { Label("Settings", systemImage: "gearshape") }
+                    .accessibilityIdentifier("settings")
+            }
+        }
     }
 }
 

@@ -412,7 +412,7 @@ struct BarMadeClient {
         let error: Detail
     }
 
-    private func get<T: Decodable>(_ path: String, as: T.Type) async throws -> T {
+    func get<T: Decodable>(_ path: String, as: T.Type) async throws -> T {
         try JSONDecoder.barMade.decode(T.self, from: await send(URLRequest(url: baseURL.appending(path: path))))
     }
 

@@ -170,6 +170,42 @@ final class BarMadeDecodingTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder.barMade.decode(BarMadeClient.Listing<BarMadeOrder>.self, from: Data(wrapped.utf8)).items.count, 1)
     }
 
+    func testDecodesRailwayVendorsPurchaseOrdersAndCart() throws {
+        let vendors = """
+        [{"id": "cmuzlml3p0000x53rfuzyoe5k", "name": "Ricardo Molina", "email": "vendor@example.com", "phone": "",
+          "notes": null, "relationship": "local", "createdAt": "2026-10-08T13:55:22.070Z",
+          "products": [{"id": "p1", "vendorId": "cmuzlml3p0000x53rfuzyoe5k", "ingredientId": "ING-023",
+                        "ingredientName": "Caesar Dressing", "pricePerPack": 25, "packLabel": "1 gal jug"}]}]
+        """
+        let v = try JSONDecoder.barMade.decode(BarMadeClient.Listing<BarMadeVendor>.self, from: Data(vendors.utf8)).items
+        XCTAssertEqual(v.first?.name, "Ricardo Molina")
+        XCTAssertNil(v.first?.phone)                       // "" reads as no phone
+        XCTAssertEqual(v.first?.relationshipLabel, "Local")
+        XCTAssertEqual(v.first?.productTotal, 1)
+        XCTAssertEqual(v.first?.products.first?.packLabel, "1 gal jug")
+
+        let orders = """
+        [{"id": "po1", "vendorId": "cmuzlml3p0000x53rfuzyoe5k", "vendorName": "Ricardo Molina", "status": "received",
+          "total": 231, "emailTo": "vendor@example.com", "emailSubject": "Italian Bread order",
+          "emailBody": "Hi Ricardo,\\n\\nWe need 33 packs.", "createdAt": "2026-10-08T15:01:14.820Z",
+          "receivedAt": "2026-10-10T03:30:00.000Z",
+          "items": [{"id": "i1", "purchaseOrderId": "po1", "ingredientId": "ING-027", "ingredientName": "Italian Bread",
+                     "packs": 33, "packSize": 6, "unit": "units", "pricePerPack": 7, "lineTotal": 231}]}]
+        """
+        let po = try JSONDecoder.barMade.decode(BarMadeClient.Listing<BarMadePurchaseOrder>.self, from: Data(orders.utf8)).items
+        let first = try XCTUnwrap(po.first)
+        XCTAssertFalse(first.isOpen)
+        XCTAssertEqual(first.title, "Italian Bread order")
+        XCTAssertEqual(first.items.first?.units, 198)
+        XCTAssertEqual(first.receivedAt, APIDate.parse("2026-10-10T03:30:00.000Z"))
+
+        let cart = try JSONDecoder.barMade.decode(BarMadeCart.self, from: Data(#"{"items": [], "count": 0}"#.utf8))
+        XCTAssertTrue(cart.items.isEmpty && cart.count == 0)
+
+        let purchasing = BarMadePurchasing(vendors: v, purchaseOrders: po, cart: cart, updatedAt: Date())
+        XCTAssertEqual(purchasing.spend(with: "cmuzlml3p0000x53rfuzyoe5k"), 231)
+    }
+
     @MainActor
     func testServingsLeftFollowsTheScarcestIngredient() async {
         let store = CustomerStore()
