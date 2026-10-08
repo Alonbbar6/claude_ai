@@ -68,8 +68,11 @@ deployment (read-only unless `--write`).
 **Deploy:** see [`customer-web/HANDOFF.md`](customer-web/HANDOFF.md) (Railway, root directory `customer-web`).
 **Contract with the backend:** [`docs/handoff/orders-contract.md`](docs/handoff/orders-contract.md).
 
-**Next up:** voice ordering. Speech builds the cart ("two Margheritas and a Coke, to go") and the customer
-confirms with one tap. The merchant dashboard also needs buttons for the status changes.
+**Voice ordering** (behind `NEXT_PUBLIC_VOICE_ORDERING=on`, needs `ANTHROPIC_API_KEY`): speech builds the cart
+("two Margheritas and a Coke, to go"), shows what it added with Undo, and the customer confirms in the cart. It never
+orders by itself. How to turn it on in Railway: [`customer-web/HANDOFF.md`](customer-web/HANDOFF.md#voice-ordering-optional).
+
+**Next up:** the merchant dashboard needs buttons for the status changes.
 
 ---
 

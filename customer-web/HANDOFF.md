@@ -19,7 +19,8 @@ The customer app never writes to `barmade/state/*`.
    - build: `npm run build`
    - start: `npm start` (listens on Railway's `$PORT`)
    - health check: `/api/health`
-3. **Node 20+** (taken from `engines` in `package.json` and from `.nvmrc`).
+3. **Node 20+** (taken from `engines` in `package.json` and from `.nvmrc`). Next 16 does not build on Node 18;
+   locally, run `nvm use` in `customer-web/` in every new terminal (or `nvm alias default 20` once).
 4. **Variables** (Service → Variables). Ask Aleska for the values, and **never commit them or paste them in chat**:
 
 | Variable | Required | Value |
@@ -27,7 +28,7 @@ The customer app never writes to `barmade/state/*`.
 | `BARMADE_API_URL` | **Yes** | `https://barmade-riw5.onrender.com` |
 | `FIREBASE_SERVICE_ACCOUNT` | **Yes** | The Firebase service-account JSON **in base64, on one line** (the same value as in Aleska's `customer-web/.env`). Used to read the menu, stock and order status live, and to store customer profiles. |
 | `FIREBASE_PROJECT_ID` | Yes | `barmade1-7be2b` |
-| `ANTHROPIC_API_KEY` | Recommended | Claude key for the "Picked for you" suggestions. Without it, rule-based suggestions are used. |
+| `ANTHROPIC_API_KEY` | Recommended | Claude key for the "Picked for you" suggestions (without it, rule-based suggestions are used). **Required for voice ordering**: without it the mic only answers "Sorry, I couldn't understand that". |
 | `ANTHROPIC_MODEL` | No | Defaults to `claude-opus-5-5`. |
 | `NEXT_PUBLIC_VOICE_ORDERING` | No | `on` shows the 🎤 voice-ordering button on the menu (Chrome / Safari). Read at **build** time, so redeploy after changing it. Off by default. |
 | `VOICE_MODEL` | No | Model for voice only (defaults to `ANTHROPIC_MODEL`). |
@@ -45,10 +46,15 @@ The customer app never writes to `barmade/state/*`.
 
 ## Voice ordering (optional)
 
+To turn it on: set `NEXT_PUBLIC_VOICE_ORDERING=on` and `ANTHROPIC_API_KEY` in Railway, then **redeploy** (the flag is
+baked in at build time). Check it on a phone over the Railway HTTPS URL.
+
+
 With `NEXT_PUBLIC_VOICE_ORDERING=on`, a 🎤 button appears on the Trattoria menu. The customer says
 "two Margheritas and a Coke, to go" (English or Spanish). Claude turns it into cart items, the server checks them
-against the live menu and stock, and the **cart opens pre-filled for a one-tap confirm**. Voice never places an
-order by itself. Questions like "where can I get sushi?" show matching dishes, including closed restaurants. The mic
+against the live menu and stock, and the mic bubble lists **exactly what was added**, with **Undo** and **Review order**
+(which opens the cart with to go / for here and the table pre-set). If a word is unclear or not on the menu, nothing is
+added: the likely dishes appear as choices to tap. Voice never places an order by itself. Questions like "where can I get sushi?" show matching dishes, including closed restaurants. The mic
 needs HTTPS (Railway provides it) and the browser's microphone permission.
 
 ## Before the demo
@@ -56,6 +62,9 @@ needs HTTPS (Railway provides it) and the browser's microphone permission.
 - **Firestore free tier: ~50k reads/day for the whole team.** It ran out once during testing (every backend call
   failed until the daily reset, midnight Pacific). The customer app caches reads, but keep dashboards that poll
   Firestore to a minimum on demo day, or switch the Firebase project to the pay-as-you-go plan.
+  While the quota is out, the menu falls back to the synthetic dataset (browsing and the cart, voice included, still
+  work) but **placing an order fails** with a generic error, because the BarMade backend can't write. It recovers by
+  itself after the reset; no redeploy needed.
 - **Wake Render up ~2 minutes before presenting**: open `https://barmade-riw5.onrender.com/api/menu`. On the
   free tier the first request after a nap takes ~50 s. The customer app also pings it every few minutes while
   someone is browsing.
