@@ -6,6 +6,8 @@ import { getMenu } from "./catalog";
 import { RESTAURANTS, TRATTORIA_ID } from "./content";
 import type { Lang } from "./i18n";
 import type { Localized } from "./content";
+import type { Allergen } from "./types";
+import { avoidConflicts } from "./diet";
 
 /**
  * Voice/text intent → cart actions. Claude only proposes; code validates every dish id,
@@ -16,10 +18,13 @@ import type { Localized } from "./content";
 // Voice needs a fast answer; VOICE_MODEL lets you pick a quicker model for this route only.
 const MODEL = process.env.VOICE_MODEL?.trim() || process.env.ANTHROPIC_MODEL?.trim() || "claude-opus-5-5";
 const MAX_QTY = 20;
+const AVOIDABLE: Allergen[] = ["dairy", "gluten", "egg", "fish", "pork", "meat"];
 
 const Output = z.object({
-  intent: z.enum(["add_to_order", "find_dish", "unknown"]),
-  items: z.array(z.object({ dishId: z.string(), quantity: z.number() })),
+  intent: z.enum(["add_to_order", "build_meal", "find_dish", "unknown"]),
+  items: z.array(z.object({ dishId: z.string(), quantity: z.number() })).describe("for build_meal: most important first"),
+  budget: z.number().describe("build_meal: total budget they said, in dollars; 0 if none"),
+  avoid: z.array(z.enum(["dairy", "gluten", "egg", "fish", "pork", "meat"])).describe("what they said to avoid"),
   fulfillment: z.enum(["to_go", "for_here", "unspecified"]),
   tableNumber: z.string(),
   matches: z.array(z.string()).describe("dish ids that answer a find_dish question, best first"),
@@ -27,21 +32,30 @@ const Output = z.object({
 });
 
 export interface VoiceResult {
-  intent: "add_to_order" | "find_dish" | "unknown";
+  intent: "add_to_order" | "build_meal" | "find_dish" | "unknown";
   items: { dishId: string; quantity: number }[];
+  /** build_meal only, computed here (never by the model): what the meal costs and the budget it had to fit. */
+  total: number | null;
+  budget: number | null;
   fulfillment: "to_go" | "for_here" | null;
   tableNumber: string | null;
   matches: { dishId: string; restaurantId: string; name: Localized; image: string; open: boolean }[];
   reply: string;
 }
 
+// Used when code had to drop dishes the model picked, so the reply can't describe a meal that isn't in the cart.
+const MEAL_TRIMMED: Record<Lang, { fits: string; none: string }> = {
+  en: { fits: "Here's what fits your budget and what you avoid. Review it before you confirm.", none: "Nothing on the menu fits that budget and what you avoid right now." },
+  es: { fits: "Esto es lo que cabe en tu presupuesto y respeta lo que evitas. Revísalo antes de confirmar.", none: "Ahora mismo nada del menú cabe en ese presupuesto y respeta lo que evitas." },
+};
+
 const FALLBACK: Record<Lang, string> = {
   en: "Sorry, I couldn't understand that. Try “two Margheritas and a Coke, to go”.",
   es: "Perdón, no te entendí. Prueba “dos Margheritas y una Coca-Cola, para llevar”.",
 };
 
-export async function interpret(text: string, lang: Lang): Promise<VoiceResult> {
-  const empty: VoiceResult = { intent: "unknown", items: [], fulfillment: null, tableNumber: null, matches: [], reply: FALLBACK[lang] };
+export async function interpret(text: string, lang: Lang, profileAvoid: Allergen[] = []): Promise<VoiceResult> {
+  const empty: VoiceResult = { intent: "unknown", items: [], total: null, budget: null, fulfillment: null, tableNumber: null, matches: [], reply: FALLBACK[lang] };
   if (!process.env.ANTHROPIC_API_KEY) return empty;
 
   const menu = await getMenu();
@@ -56,6 +70,8 @@ export async function interpret(text: string, lang: Lang): Promise<VoiceResult> 
         name: d.name.en,
         name_es: d.name.es,
         price: d.price,
+        category: d.category,
+        allergens: avoidConflicts(d, AVOIDABLE),
         ...(d.status === "sold_out" ? { soldOut: true } : { left: d.servingsLeft }),
       })),
     },
@@ -82,6 +98,13 @@ export async function interpret(text: string, lang: Lang): Promise<VoiceResult> 
       "transcription errors). If a word could be more than one dish, or names nothing on the menu, do NOT add a " +
       "guess: put the likely dish ids in matches and ask in the reply which one they meant. Set fulfillment if they say to go / take away / para llevar (to_go) or " +
       "for here / eat here / para comer aquí (for_here), else unspecified. tableNumber only if they say one, else empty.\n" +
+      "- build_meal: they want you to put a meal together (e.g. 'dinner for two under $40, no pork', 'something " +
+      "light for one'). Pick dishes from the OPEN restaurant that are not soldOut: a sensible meal per person (a main, " +
+      "and a drink or starter or dessert when the budget allows), most important first. Respect what they avoid and the " +
+      `customer's saved avoid list ${JSON.stringify(profileAvoid)}, using each dish's allergens. Set budget if they gave ` +
+      "one (else 0) and fill avoid with what they said to avoid. Code checks the budget and the allergens and computes " +
+      "the total, so never state prices or totals in the reply: describe the meal in a few words. If nothing fits, " +
+      "return no items and say so.\n" +
       "- find_dish: they ask where/what to eat or for restaurants with some dish. Put matching dish ids from any " +
       "restaurant in matches (closed ones too). If the best match is closed, say it opens at 5 PM and suggest a similar " +
       "orderable dish at the open restaurant, including its id in matches.\n" +
@@ -101,12 +124,30 @@ export async function interpret(text: string, lang: Lang): Promise<VoiceResult> 
 
   // ---- validate everything Claude proposed against the live menu
   const byId = new Map(orderable.map((d) => [d.id, d]));
+  const building = out.intent === "build_meal";
+  let trimmed = false;
+  const avoid = [...new Set([...profileAvoid, ...out.avoid])];
   const merged = new Map<string, number>();
-  for (const it of out.intent === "add_to_order" ? out.items : []) {
+  for (const it of out.intent === "add_to_order" || building ? out.items : []) {
     const d = byId.get(it.dishId);
     if (!d) continue;
+    // A meal we build must respect what they avoid; a dish they named themselves is their call (the UI warns).
+    if (building && avoidConflicts(d, avoid).length) {
+      trimmed = true;
+      continue;
+    }
     const q = Math.max(1, Math.min(MAX_QTY, Math.round(Number(it.quantity) || 1)));
     merged.set(d.id, Math.min((merged.get(d.id) ?? 0) + q, d.servingsLeft));
+  }
+  // Fit the budget by trimming from the least important end, one serving at a time.
+  const budget = building && out.budget > 0 ? Math.round(out.budget * 100) / 100 : null;
+  const totalOf = () => [...merged].reduce((s, [id, q]) => s + byId.get(id)!.price * q, 0);
+  while (budget !== null && merged.size && totalOf() > budget) {
+    trimmed = true;
+    const last = [...merged.keys()].pop()!;
+    const q = merged.get(last)! - 1;
+    if (q > 0) merged.set(last, q);
+    else merged.delete(last);
   }
   const lookup = new Map<string, VoiceResult["matches"][number]>();
   for (const d of menu.dishes) lookup.set(d.id, { dishId: d.id, restaurantId: TRATTORIA_ID, name: d.name, image: d.image, open: true });
@@ -117,11 +158,13 @@ export async function interpret(text: string, lang: Lang): Promise<VoiceResult> 
 
   return {
     // Nothing clear to add but likely dishes to pick from → show them as choices.
-    intent: out.intent === "add_to_order" && merged.size === 0 ? (matches.length ? "find_dish" : "unknown") : out.intent,
+    intent: (out.intent === "add_to_order" || building) && merged.size === 0 ? (matches.length ? "find_dish" : "unknown") : out.intent,
     items: [...merged].filter(([, q]) => q > 0).map(([dishId, quantity]) => ({ dishId, quantity })),
+    total: building && merged.size ? Math.round(totalOf() * 100) / 100 : null,
+    budget: building && merged.size ? budget : null,
     fulfillment: out.fulfillment === "unspecified" ? null : out.fulfillment,
     tableNumber: out.tableNumber.trim().replace(/[^\w-]/g, "").slice(0, 8) || null,
     matches,
-    reply: out.reply.trim().slice(0, 300) || FALLBACK[lang],
+    reply: trimmed ? MEAL_TRIMMED[lang][merged.size ? "fits" : "none"] : out.reply.trim().slice(0, 300) || FALLBACK[lang],
   };
 }

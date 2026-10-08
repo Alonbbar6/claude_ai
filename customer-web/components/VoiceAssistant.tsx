@@ -7,12 +7,15 @@ import type { ViewDish } from "@/lib/types";
 import { useApp } from "./AppProvider";
 import type { CartPreset } from "./Cart";
 import { useSpeech } from "./useSpeech";
+import { avoidConflicts } from "@/lib/diet";
 
 export const VOICE_ENABLED = process.env.NEXT_PUBLIC_VOICE_ORDERING === "on";
 
 interface VoiceResult {
-  intent: "add_to_order" | "find_dish" | "unknown";
+  intent: "add_to_order" | "build_meal" | "find_dish" | "unknown";
   items: { dishId: string; quantity: number }[];
+  total: number | null;
+  budget: number | null;
   fulfillment: "to_go" | "for_here" | null;
   tableNumber: string | null;
   matches: { dishId: string; restaurantId: string; name: Localized; image: string; open: boolean }[];
@@ -32,7 +35,8 @@ export function VoiceAssistant({
   onOpenDish: (d: ViewDish) => void;
   onReviewCart: (preset: CartPreset) => void;
 }) {
-  const { t, L, lang, cart, addToCart, updateQty } = useApp();
+  const { t, L, lang, price, cart, customer, addToCart, updateQty } = useApp();
+  const avoid = customer?.taste?.avoid ?? [];
   const speech = useSpeech(lang);
   const [heard, setHeard] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,12 +56,12 @@ export function VoiceAssistant({
       const res = await fetch("/api/voice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, lang }),
+        body: JSON.stringify({ text, lang, avoid }),
       });
       if (!res.ok) throw new Error();
       const r: VoiceResult = await res.json();
       setResult(r);
-      if (r.intent === "add_to_order" && r.items.length) {
+      if ((r.intent === "add_to_order" || r.intent === "build_meal") && r.items.length) {
         const done: typeof added = [];
         for (const it of r.items) {
           const d = dishes.find((x) => x.id === it.dishId);
@@ -72,7 +76,7 @@ export function VoiceAssistant({
         setAdded(done);
       }
     } catch {
-      setResult({ intent: "unknown", items: [], fulfillment: null, tableNumber: null, matches: [], reply: t("voice.error.other") });
+      setResult({ intent: "unknown", items: [], total: null, budget: null, fulfillment: null, tableNumber: null, matches: [], reply: t("voice.error.other") });
     } finally {
       setBusy(false);
     }
@@ -126,11 +130,24 @@ export function VoiceAssistant({
                 <>
                   <ul className="rounded-xl bg-white/10 px-3 py-2">
                     <li className="text-xs font-bold uppercase tracking-wide text-white/60">{t("voice.added")}</li>
-                    {added.map((a) => (
-                      <li key={a.dish.id} className="font-semibold">
-                        {a.quantity}× {L(a.dish.name)}
+                    {added.map((a) => {
+                      const clash = avoidConflicts(a.dish, avoid);
+                      return (
+                        <li key={a.dish.id} className="font-semibold">
+                          {a.quantity}× {L(a.dish.name)}
+                          {clash.length > 0 && (
+                            <span className="ml-1 text-xs text-gold">⚠ {clash.map((x) => t(`allergen.${x}` as never)).join(" · ")}</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                    {result.total !== null && (
+                      <li className="mt-1 border-t border-white/15 pt-1 text-xs text-white/70">
+                        {result.budget !== null
+                          ? t("voice.totalBudget", { total: price(result.total), budget: price(result.budget) })
+                          : t("voice.total", { total: price(result.total) })}
                       </li>
-                    ))}
+                    )}
                   </ul>
                   <div className="flex gap-2">
                     <button type="button" onClick={undo} className="flex-1 rounded-full border border-white/30 py-2 text-sm font-bold hover:bg-white/10">
