@@ -11,6 +11,33 @@ import { avoidConflicts } from "@/lib/diet";
 
 export const VOICE_ENABLED = process.env.NEXT_PUBLIC_VOICE_ORDERING === "on";
 
+interface Turn {
+  said: string;
+  reply: string;
+  proposed: string[];
+  added: { dishId: string; quantity: number }[];
+}
+
+const HISTORY_KEY = "bm_voice_history";
+const HISTORY_TTL_MS = 10 * 60_000;
+
+function loadHistory(): Turn[] {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(HISTORY_KEY) ?? "null") as { at: number; turns: Turn[] } | null;
+    return raw && Date.now() - raw.at < HISTORY_TTL_MS && Array.isArray(raw.turns) ? raw.turns : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(turns: Turn[]) {
+  try {
+    sessionStorage.setItem(HISTORY_KEY, JSON.stringify({ at: Date.now(), turns }));
+  } catch {
+    /* private mode: memory lasts only while this page is open */
+  }
+}
+
 interface VoiceResult {
   intent: "add_to_order" | "build_meal" | "find_dish" | "unknown";
   items: { dishId: string; quantity: number }[];
@@ -44,8 +71,15 @@ export function VoiceAssistant({
   const [open, setOpen] = useState(false);
   // What the last voice request put in the cart, so the customer can see it and undo it.
   const [added, setAdded] = useState<{ dish: ViewDish; quantity: number }[]>([]);
-  // The last exchanges while the bubble stays open, so "yes, add it" knows what "it" is.
-  const [history, setHistory] = useState<{ said: string; reply: string; proposed: string[]; added: { dishId: string; quantity: number }[] }[]>([]);
+  // The last exchanges, so "yes, add it" knows what "it" is. Kept for this tab (survives closing the
+  // bubble and changing pages) and forgotten after 10 quiet minutes.
+  const [history, setHistoryState] = useState<Turn[]>(loadHistory);
+  const setHistory = (update: (h: Turn[]) => Turn[]) =>
+    setHistoryState((h) => {
+      const next = update(h);
+      saveHistory(next);
+      return next;
+    });
 
   if (!speech.supported) return null;
 
@@ -123,10 +157,7 @@ export function VoiceAssistant({
         <div className="relative w-[min(22rem,calc(100vw-2rem))] rounded-2xl bg-night p-4 text-sm text-white shadow-2xl" aria-live="polite">
           <button
             type="button"
-            onClick={() => {
-              setOpen(false);
-              setHistory([]);
-            }}
+            onClick={() => setOpen(false)}
             aria-label={t("menu.close")} className="absolute right-2 top-2 h-7 w-7 rounded-full text-white/60 hover:bg-white/10">
             ✕
           </button>
