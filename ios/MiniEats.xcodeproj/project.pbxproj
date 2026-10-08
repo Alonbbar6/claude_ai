@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -22,11 +22,13 @@
 		769BDFFBAFFE614242F3E06F /* OrderFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CB1C8EA9FEA7106E5C828B /* OrderFlowUITests.swift */; };
 		856A0C3F7FBB28759010C956 /* MerchantStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CC6D6B712E9CEAE36B857FE /* MerchantStore.swift */; };
 		88979C601E0312A3672C7D8D /* BarMade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B36D97D922AD99C3194259D /* BarMade.swift */; };
+		88F59BE1B537F68B512D6BF4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E4959754146FF925F93C4E7E /* Assets.xcassets */; };
 		A04084752A3D48C0286603E3 /* DecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625230F8146DA33D39838081 /* DecodingTests.swift */; };
 		ABF7CABDCFA997BE3F20F1CD /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E33BF6B88BED032C46E256 /* MenuView.swift */; };
 		AF548E7F2E2233407FAD820F /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24BDA47977998F352DCA9534 /* AccountView.swift */; };
 		B0E4FA517A84B33F01064F18 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7A7584A20B0C87DBA3621E /* NotificationsView.swift */; };
 		B581EB183E7F44F760F4CBBE /* MerchantModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92EA7ECB9744C7423A8021F6 /* MerchantModels.swift */; };
+		BC153AE7A26939EA81E370DD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 876FCC6A9A6453149CAEC29A /* Assets.xcassets */; };
 		C69DA27B1F1D05C30069DFE5 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B7711283E12C17B6BB7019 /* Components.swift */; };
 		CB0EF5D99E0790A282DC9968 /* BarMadeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF76056A461F3F7226355157 /* BarMadeViews.swift */; };
 		D1E6780487595AABEC118961 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D9A1595335CE1589DDC95B /* APIClient.swift */; };
@@ -72,7 +74,7 @@
 		417BE3F21B25D06CC220F5FC /* CartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CartView.swift; sourceTree = "<group>"; };
 		5CC6D6B712E9CEAE36B857FE /* MerchantStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantStore.swift; sourceTree = "<group>"; };
 		625230F8146DA33D39838081 /* DecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodingTests.swift; sourceTree = "<group>"; };
-		636B14A456904ECDF43916F8 /* MiniEats.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MiniEats.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		636B14A456904ECDF43916F8 /* MiniEats.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MiniEats.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6B36D97D922AD99C3194259D /* BarMade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarMade.swift; sourceTree = "<group>"; };
 		7008F19FB22C524505F5EAF1 /* MiniEatsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MiniEatsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		701C0672B5BB85ED43417134 /* MiniEatsUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MiniEatsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -80,6 +82,7 @@
 		752C0E4E7572BBAFA5408F64 /* NearbyMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyMapView.swift; sourceTree = "<group>"; };
 		77A38C4F31F0A8AEF9CA1807 /* OrderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderDetailView.swift; sourceTree = "<group>"; };
 		817BB2C78690C10A2457C599 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		876FCC6A9A6453149CAEC29A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		88A5118F0BE42476B10BBF48 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		8D97DF0FDE676DF040094BFF /* InventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryView.swift; sourceTree = "<group>"; };
 		92EA7ECB9744C7423A8021F6 /* MerchantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantModels.swift; sourceTree = "<group>"; };
@@ -93,6 +96,7 @@
 		D0B7711283E12C17B6BB7019 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		D9D09291A9F3EB4A5DCA504C /* MiniEatsMerchant.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MiniEatsMerchant.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E42D2A7A6530BFE0A4F1B54E /* MenuCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuCatalogView.swift; sourceTree = "<group>"; };
+		E4959754146FF925F93C4E7E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EF76056A461F3F7226355157 /* BarMadeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarMadeViews.swift; sourceTree = "<group>"; };
 		F04A5CC19D0A65FDE85E8663 /* OrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrdersView.swift; sourceTree = "<group>"; };
 		FEDA63C54D2F844A955FCE28 /* MerchantApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantApp.swift; sourceTree = "<group>"; };
@@ -104,6 +108,7 @@
 			children = (
 				32D9A1595335CE1589DDC95B /* APIClient.swift */,
 				817BB2C78690C10A2457C599 /* AppStore.swift */,
+				876FCC6A9A6453149CAEC29A /* Assets.xcassets */,
 				00FB5195E3AA9C34B7F4C587 /* Info.plist */,
 				2108A6E07F08850C81D5A936 /* LocationService.swift */,
 				71E584C1B8905DA37F3B295E /* MiniEatsApp.swift */,
@@ -174,6 +179,7 @@
 		DD1BDB1BD2ED324C5E769CF7 /* MiniEatsMerchant */ = {
 			isa = PBXGroup;
 			children = (
+				E4959754146FF925F93C4E7E /* Assets.xcassets */,
 				6B36D97D922AD99C3194259D /* BarMade.swift */,
 				BDBF30AD0A6BBE207CA2556E /* Info.plist */,
 				FEDA63C54D2F844A955FCE28 /* MerchantApp.swift */,
@@ -210,6 +216,7 @@
 			buildConfigurationList = 389E423026A18BF7099D18E8 /* Build configuration list for PBXNativeTarget "MiniEatsMerchant" */;
 			buildPhases = (
 				135F6C4E3009EA7E0A76DD9D /* Sources */,
+				D358254F8A23C521CF41034A /* Resources */,
 			);
 			buildRules = (
 			);
@@ -281,6 +288,7 @@
 			buildConfigurationList = 6F687BB8FCB4222244CBC98C /* Build configuration list for PBXNativeTarget "MiniEats" */;
 			buildPhases = (
 				8BB89F7647E0687588FD26CE /* Sources */,
+				1435042E1F0FE13FFBE4887B /* Resources */,
 			);
 			buildRules = (
 			);
@@ -318,7 +326,6 @@
 						TestTargetID = DCDE18AEB6187BFDCE915A65;
 					};
 					DCDE18AEB6187BFDCE915A65 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -333,7 +340,6 @@
 			);
 			mainGroup = C35DD95B610792EBCDB4541B;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -345,6 +351,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1435042E1F0FE13FFBE4887B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BC153AE7A26939EA81E370DD /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D358254F8A23C521CF41034A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				88F59BE1B537F68B512D6BF4 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		135F6C4E3009EA7E0A76DD9D /* Sources */ = {
@@ -523,6 +548,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8CN54MQ3P6;
 				INFOPLIST_FILE = MiniEats/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -605,6 +631,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8CN54MQ3P6;
 				INFOPLIST_FILE = MiniEats/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

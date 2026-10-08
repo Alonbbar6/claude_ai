@@ -151,16 +151,24 @@ struct BarMadeClient {
 
 extension JSONDecoder {
     /// BarMade keys are already camelCase. Its timestamps have no zone
-    /// ("2026-10-06T19:40:00") and are the kitchen's local time.
+    /// ("2026-10-06T19:40:00"): `createdAt` is the server clock in UTC,
+    /// while batch arrival/expiry dates are the kitchen's local calendar.
     static let barMade: JSONDecoder = {
-        let local = DateFormatter()
-        local.locale = Locale(identifier: "en_US_POSIX")
-        local.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        func formatter(_ zone: TimeZone) -> DateFormatter {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = zone
+            f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            return f
+        }
+        let local = formatter(.current)
+        let utc = formatter(TimeZone(identifier: "UTC")!)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let string = try decoder.singleValueContainer().decode(String.self)
             let trimmed = string.replacingOccurrences(of: #"\.\d+$"#, with: "", options: .regularExpression)
-            guard let date = APIDate.parse(string) ?? local.date(from: trimmed) else {
+            let zoned = decoder.codingPath.last?.stringValue == "createdAt" ? utc : local
+            guard let date = APIDate.parse(string) ?? zoned.date(from: trimmed) else {
                 throw DecodingError.dataCorrupted(.init(
                     codingPath: decoder.codingPath, debugDescription: "Bad date \(string)"))
             }

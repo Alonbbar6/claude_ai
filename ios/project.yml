@@ -19,6 +19,7 @@ targets:
       path: MiniEats/Info.plist
       properties:
         CFBundleDisplayName: Mini Eats
+        CFBundleIconName: AppIcon
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         # The dev backend is plain http on localhost / your LAN.
@@ -33,6 +34,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.minieats.app
         TARGETED_DEVICE_FAMILY: "1"
+        # MiniEats/Assets.xcassets; also writes CFBundleIconName (App Store requires it).
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
   MiniEatsTests:
     type: bundle.unit-test
@@ -66,6 +69,7 @@ targets:
       path: MiniEatsMerchant/Info.plist
       properties:
         CFBundleDisplayName: Eats Merchant
+        CFBundleIconName: AppIcon
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad:
@@ -81,6 +85,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.minieats.merchant
         TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
   MiniEatsMerchantUITests:
     type: bundle.ui-testing
