@@ -5,7 +5,8 @@ set -u
 cd "$(dirname "$0")/../../../.." || exit 2   # repo root (claude_ai/)
 
 DOMAIN=${NGROK_DOMAIN:-$(grep -E '^\s*MINIEATS_SERVER_URL:' ios/project.yml | head -1 | sed -E 's/.*https?:\/\///; s/\s*$//')}
-BARMADE=${BARMADE_URL:-https://barmade-riw5.onrender.com}
+BARMADE=${BARMADE_URL:-$(grep -E '^\s*BARMADE_API_URL:' ios/project.yml | head -1 | sed -E 's/^[^:]*:\s*//; s/\s*$//')}
+BARMADE=${BARMADE:-https://claudeai-production-0dcc.up.railway.app}
 fails=0
 pass() { printf '\033[32mPASS\033[0m %s\n' "$1"; }
 fail() { printf '\033[31mFAIL\033[0m %s\n     fix: %s\n' "$1" "$2"; fails=$((fails+1)); }
@@ -54,7 +55,7 @@ fi
 
 echo "== BarMade API ($BARMADE)"
 c=$(code "$BARMADE/" 60)
-if [ "$c" = 200 ]; then pass "BarMade reachable"; else fail "BarMade returned HTTP $c" "Render cold start takes ~50 s; retry. 404 with x-render-routing: no-server means the host moved"; fi
+if [ "$c" = 200 ]; then pass "BarMade reachable ($(curl -s -m 10 "$BARMADE/api/health" 2>/dev/null | head -c 80))"; else fail "BarMade returned HTTP $c" "Render cold start takes ~50 s; retry. 404 with x-render-routing: no-server means the host moved — check BARMADE_API_URL in ios/project.yml"; fi
 
 echo "== Web demo (:8010)"
 if pgrep -f 'uvicorn web.app:app' >/dev/null; then pass "web demo running at http://127.0.0.1:8010 (phones: http://$IP:8010)"; else printf 'skip web demo not running (scripts/up.sh --web)\n'; fi
