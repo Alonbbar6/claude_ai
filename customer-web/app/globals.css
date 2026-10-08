@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: #faf7f0;
+  color: #333333;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-gold px-5 py-3 font-bold text-night
+      transition hover:bg-gold-hover active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-line bg-white px-4 py-2
+      font-semibold text-ink transition hover:border-gold active:scale-[.98];
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold;
+  }
+  .card {
+    @apply overflow-hidden rounded-2xl bg-white shadow-card;
+  }
+}
+
+/* Sheet / modal animation (open and close) */
+.sheet-backdrop {
+  transition: opacity 220ms ease;
+}
+.sheet-panel {
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 220ms ease;
+}
+.sheet[data-state="closed"] .sheet-backdrop {
+  opacity: 0;
+}
+.sheet[data-state="closed"] .sheet-panel {
+  transform: translateY(24px) scale(0.98);
+  opacity: 0;
+}
+@media (max-width: 639px) {
+  .sheet[data-state="closed"] .sheet-panel {
+    transform: translateY(100%);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-backdrop,
+  .sheet-panel {
+    transition: none;
+  }
+}
+
+/* Image placeholder shimmer while photos load */
+.img-wrap {
+  background: linear-gradient(110deg, #efe9dc 8%, #f7f2e7 18%, #efe9dc 33%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position-x: -200%;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
