@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ViewDish, ViewRestaurant, ViewSpecial } from "@/lib/types";
+import type { Allergen, ViewDish, ViewRestaurant, ViewSpecial } from "@/lib/types";
+import { avoidConflicts } from "@/lib/diet";
 import { useApp } from "./AppProvider";
 import { DemoFooter, Header } from "./Header";
 import { CartBar, CartSheet, type CartPreset } from "./Cart";
@@ -25,8 +26,11 @@ export function MenuView({
   special: ViewSpecial | null;
   alternatives?: ViewDish[];
 }) {
-  const { t, L, cart } = useApp();
+  const { t, L, cart, customer, setTastesOpen } = useApp();
   const [openDish, setOpenDish] = useState<ViewDish | null>(null);
+  const [hideConflicts, setHideConflicts] = useState(false);
+  const avoid = useMemo(() => (restaurant.acceptsOrders ? customer?.taste?.avoid ?? [] : []), [restaurant, customer]);
+  const conflictCount = dishes.filter((d) => avoidConflicts(d, avoid).length).length;
   const [cartOpen, setCartOpen] = useState(false);
   const [cartPreset, setCartPreset] = useState<CartPreset | null>(null);
   const canOrder = restaurant.acceptsOrders;
@@ -46,12 +50,17 @@ export function MenuView({
       categories
         .map((c) => ({
           c,
-          // Available first, sold out last (stable within each group)
-          items: dishes.filter((d) => d.category === c).sort((a, b) => Number(a.status === "sold_out") - Number(b.status === "sold_out")),
+          // Available first, then dishes that clash with what the customer avoids, sold out last
+          items: dishes
+            .filter((d) => d.category === c && !(hideConflicts && avoidConflicts(d, avoid).length))
+            .sort((a, b) => rank(a) - rank(b)),
         }))
         .filter((g) => g.items.length),
-    [categories, dishes],
+    [categories, dishes, avoid, hideConflicts],
   );
+  function rank(d: ViewDish) {
+    return d.status === "sold_out" ? 2 : avoidConflicts(d, avoid).length ? 1 : 0;
+  }
 
   return (
     <Gate>
@@ -97,6 +106,25 @@ export function MenuView({
         </nav>
         )}
 
+        {canOrder && avoid.length > 0 && (
+          <div className="mx-4 mt-4 flex flex-wrap items-center gap-2 rounded-2xl bg-fresh-tint px-4 py-3 text-sm sm:mx-6">
+            <span className="font-semibold text-fresh">
+              🛡 {t("diet.avoiding")}: {avoid.map((a) => t(`allergen.${a}` as never)).join(" · ")}
+            </span>
+            <span className="text-ink-soft">{t("diet.count", { n: conflictCount })}</span>
+            <span className="ml-auto flex gap-2">
+              {conflictCount > 0 && (
+                <button type="button" className="btn-ghost px-3 py-1 text-xs" onClick={() => setHideConflicts((v) => !v)}>
+                  {hideConflicts ? t("diet.showAll") : t("diet.hide")}
+                </button>
+              )}
+              <button type="button" className="btn-ghost px-3 py-1 text-xs" onClick={() => setTastesOpen(true)}>
+                {t("diet.edit")}
+              </button>
+            </span>
+          </div>
+        )}
+
         {canOrder && <ForYou dishes={dishes} onOpen={setOpenDish} />}
 
         {/* Chef's special (FR-8 overstock) */}
@@ -126,7 +154,7 @@ export function MenuView({
             <h2 className="mb-3 text-xl font-black text-night">{CATEGORY_LABELS[c] ? L(CATEGORY_LABELS[c]) : c}</h2>
             <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
               {items.map((d) => (
-                <DishCard key={d.id} dish={d} onOpen={() => setOpenDish(d)} special={d.id === special?.dishId && canOrder} dim={!canOrder} />
+                <DishCard key={d.id} dish={d} onOpen={() => setOpenDish(d)} special={d.id === special?.dishId && canOrder} dim={!canOrder} conflicts={avoidConflicts(d, avoid)} />
               ))}
             </div>
           </section>
@@ -186,12 +214,14 @@ export function DishCard({
   special = false,
   dim = false,
   badge,
+  conflicts = [],
 }: {
   dish: ViewDish;
   onOpen: () => void;
   special?: boolean;
   dim?: boolean;
   badge?: string;
+  conflicts?: Allergen[];
 }) {
   const { L, t, price } = useApp();
   const soldOut = dish.status === "sold_out";
@@ -200,7 +230,7 @@ export function DishCard({
       type="button"
       onClick={onOpen}
       className={`card group flex flex-col text-left transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-gold ${
-        soldOut ? "opacity-60" : ""
+        soldOut ? "opacity-60" : conflicts.length ? "opacity-75" : ""
       }`}
     >
       <div className="relative">
@@ -210,6 +240,9 @@ export function DishCard({
           {special && <span className="chip bg-gold text-night">★ {t("special.badge")}</span>}
           {soldOut && <span className="chip bg-night text-white">{t("menu.soldOut")}</span>}
           {dish.status === "low" && <span className="chip bg-warn text-white">{t("menu.onlyLeft", { n: dish.servingsLeft ?? 0 })}</span>}
+          {conflicts.length > 0 && (
+            <span className="chip bg-warn text-white">⚠ {conflicts.map((a) => t(`allergen.${a}` as never)).join(" · ")}</span>
+          )}
         </div>
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3 sm:p-4">
@@ -240,7 +273,8 @@ function DishSheet({ dish, canOrder, onClose }: { dish: ViewDish | null; canOrde
 }
 
 function DishDetail({ dish, canOrder, onDone }: { dish: ViewDish; canOrder: boolean; onDone: () => void }) {
-  const { L, t, price, addToCart } = useApp();
+  const { L, t, price, addToCart, customer } = useApp();
+  const conflicts = canOrder ? avoidConflicts(dish, customer?.taste?.avoid ?? []) : [];
   const [qty, setQty] = useState(1);
   const [mods, setMods] = useState<string[]>([]);
   const unit = dish.price + dish.modifiers.filter((m) => mods.includes(m.id)).reduce((s, m) => s + m.price, 0);
@@ -294,6 +328,12 @@ function DishDetail({ dish, canOrder, onDone }: { dish: ViewDish; canOrder: bool
             </span>
           ))}
         </div>
+
+        {conflicts.length > 0 && (
+          <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn" role="note">
+            ⚠ {t("diet.warn", { items: conflicts.map((a) => t(`allergen.${a}` as never)).join(" · ") })}
+          </p>
+        )}
 
         {dish.allergens.length > 0 && (
           <div className="rounded-xl bg-cream p-3 text-sm">

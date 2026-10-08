@@ -6,6 +6,7 @@ import { getMenu, type Dish } from "./catalog";
 import type { Taste } from "./content";
 import type { Allergen } from "./types";
 import type { Lang } from "./i18n";
+import { avoidConflicts } from "./diet";
 
 /**
  * Taste-based suggestions.
@@ -45,8 +46,7 @@ const Output = z.object({
 
 export function allowedFor(dish: Dish, avoid: Allergen[]) {
   if (dish.status === "sold_out") return false;
-  if (avoid.includes("meat") && !dish.vegetarian) return false;
-  return !dish.allergens.some((a) => avoid.includes(a));
+  return avoidConflicts(dish, avoid).length === 0;
 }
 
 export async function recommend(input: RecommendInput): Promise<RecommendResult> {
