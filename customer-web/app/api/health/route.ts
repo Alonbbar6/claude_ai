@@ -1,6 +1,7 @@
 import { json } from "@/lib/http";
 import { store } from "@/lib/store";
 import { barmadeMode } from "@/lib/barmade";
+import { aiProvider } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export async function GET() {
       ok: true,
       db: store().kind,
       orders: barmadeMode() ? "barmade-api" : "local",
-      ai: Boolean(process.env.ANTHROPIC_API_KEY),
+      ai: aiProvider() ?? false,
     });
   } catch (err) {
     console.error("health check failed", err);

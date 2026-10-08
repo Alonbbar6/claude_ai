@@ -122,6 +122,10 @@ export async function loadCatalog(): Promise<Catalog> {
       console.error("BarMade live menu unavailable, using dataset", err instanceof Error ? err.message : err);
     }
   }
+  if (barmadeMode()) {
+    // Backend unreachable and nothing cached: dataset stock as a rough estimate (orders still go to the backend).
+    return { rows: MENU, stock: new Map(INVENTORY.map((i) => [i.id, i.batches.reduce((s, b) => s + b.quantity, 0)])), live: false };
+  }
   return { rows: MENU, stock: await currentStock(), live: false };
 }
 
