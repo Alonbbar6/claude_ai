@@ -50,6 +50,9 @@ const MEAL_TRIMMED: Record<Lang, { fits: string; none: string }> = {
   es: { fits: "Esto es lo que cabe en tu presupuesto y respeta lo que evitas. Revísalo antes de confirmar.", none: "Ahora mismo nada del menú cabe en ese presupuesto y respeta lo que evitas." },
 };
 
+// "recommend me…" / "recomiéndame…" etc.; follow-ups like "pídemelo" don't match.
+const RECOMMEND_ASK = /\b(recommend|suggest|what'?s good|what should i (get|have|order)|recomi[eé]nd|recomend|suger|sugi[eé]r|qu[eé] me (aconsejas|sugieres|recomiendas))/i;
+
 const UNAVAILABLE: Record<Lang, string> = {
   en: "The voice assistant isn't available right now. You can still browse the menu and order from it.",
   es: "El asistente de voz no está disponible en este momento. Puedes ver el menú y pedir desde ahí.",
@@ -132,7 +135,10 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
       "the total, so never state prices or totals in the reply. The dishes go straight into the cart, so say you " +
       "added them (not 'how about…') and describe the meal in a few words. If nothing fits, " +
       "return no items and say so.\n" +
-      "- find_dish: they ask where/what to eat or for restaurants with some dish. Put matching dish ids from any " +
+      "- find_dish: they ask where/what to eat, for restaurants with some dish, or for a recommendation or " +
+      "suggestion ('recommend', 'suggest', 'what's good', 'recomiéndame', 'qué me sugieres', 'qué me recomiendas'). " +
+      "A recommendation request only suggests: put the suggested dish ids in matches and add NOTHING to items; the " +
+      "customer adds them with a follow-up like 'order that one'. Put matching dish ids from any " +
       "restaurant in matches (closed ones too). If the best match is closed, say it opens at 5 PM and suggest a similar " +
       "orderable dish at the open restaurant, including its id in matches.\n" +
       "- unknown: anything else.\n" +
@@ -141,7 +147,9 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
       "remind them to review and confirm their order.\n" +
       "previous_turns (if any) are earlier sentences in this same conversation, oldest first. Use them to resolve " +
       "follow-ups like 'yes', 'add it', 'add that meal', 'make it three': for those, return add_to_order with the dishes " +
-      "they refer to (from proposed, or from the dishes named in that reply). Dishes in added are ALREADY in the cart: " +
+      "they refer to (from proposed, or from the dishes named in that reply). A singular reference ('it', 'that one', " +
+      "'the first one', 'lo', 'ese', 'pídemelo') means ONLY the first proposed dish; add several only when they say so " +
+      "('both', 'all of them', 'los dos', 'todos'). Dishes in added are ALREADY in the cart: " +
       "never add them again unless they clearly ask for more; if they only confirm, return unknown and say it's already " +
       "in their cart and they can tap Review order.\n" +
       `The reply is at most ${REPLY_MAX} characters including spaces, plain text, one or two sentences. Plan it to ` +
@@ -158,6 +166,12 @@ export async function interpret(text: string, lang: Lang, profileAvoid: Allergen
   });
   if (out === undefined) return { ...empty, reply: UNAVAILABLE[lang] };
   if (!out) return empty;
+  // Asking for a recommendation never fills the cart, whatever the model decided: show the dishes instead.
+  if (out.intent === "add_to_order" && RECOMMEND_ASK.test(text)) {
+    out.matches = [...new Set([...out.items.map((i) => i.dishId), ...out.matches])];
+    out.items = [];
+    out.intent = "find_dish";
+  }
 
   // ---- validate everything Claude proposed against the live menu
   const byId = new Map(orderable.map((d) => [d.id, d]));
