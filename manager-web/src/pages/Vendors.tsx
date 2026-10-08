@@ -159,13 +159,15 @@ export function Vendors() {
 
 
 
-/** Attach the ingredients a vendor sells, each with a price per pack. The
- *  backend already exposes POST /vendors/:id/products (upsert by ingredient). */
+/** Attach the ingredients a vendor sells, each with a price per pack. Checkbox
+ *  multi-select: tick ingredients, a price field appears for each, save all at
+ *  once. Existing products can be deleted. Backend: POST .../products/batch and
+ *  DELETE .../products/:ingredientId. */
 function VendorProducts({ vendor, inventory, onChange }: { vendor: Vendor; inventory: InvItem[]; onChange: () => void }) {
-  const [ingredientId, setIngredientId] = useState('');
-  const [price, setPrice] = useState('');
   const [saving, setSaving] = useState(false);
   const [list, setList] = useState<VendorProduct[]>(vendor.products ?? []);
+  // checked ingredientId -> price string
+  const [picked, setPicked] = useState<Record<string, string>>({});
 
   async function refreshProducts() {
     const all = await api<Vendor[]>('/vendors');
@@ -174,15 +176,33 @@ function VendorProducts({ vendor, inventory, onChange }: { vendor: Vendor; inven
     onChange();
   }
 
-  async function add() {
-    const p = Number(price);
-    if (!ingredientId || !(p > 0)) return;
+  function toggle(id: string) {
+    setPicked((p) => {
+      if (id in p) { const { [id]: _, ...rest } = p; return rest; }
+      return { ...p, [id]: '' };
+    });
+  }
+  function setPrice(id: string, v: string) { setPicked((p) => ({ ...p, [id]: v })); }
+
+  const rows = Object.entries(picked)
+    .map(([ingredientId, price]) => ({ ingredientId, pricePerPack: Number(price) }))
+    .filter((r) => r.pricePerPack > 0);
+  const anyChecked = Object.keys(picked).length > 0;
+  const allPriced = anyChecked && rows.length === Object.keys(picked).length;
+
+  async function saveAll() {
+    if (!rows.length) return;
     setSaving(true);
     try {
-      await api(`/vendors/${vendor.id}/products`, { method: 'POST', body: JSON.stringify({ ingredientId, pricePerPack: p }) });
-      setIngredientId(''); setPrice('');
+      await api(`/vendors/${vendor.id}/products/batch`, { method: 'POST', body: JSON.stringify({ products: rows }) });
+      setPicked({});
       await refreshProducts();
     } finally { setSaving(false); }
+  }
+
+  async function removeProduct(ingredientId: string) {
+    await api(`/vendors/${vendor.id}/products/${ingredientId}`, { method: 'DELETE' });
+    await refreshProducts();
   }
 
   // Ingredients not already priced for this vendor.
@@ -190,29 +210,57 @@ function VendorProducts({ vendor, inventory, onChange }: { vendor: Vendor; inven
   const options = inventory.filter((i) => !taken.has(i.id));
 
   return (
-    <div className="mt-2 space-y-2 rounded-lg glass-inset border border-transparent p-2.5">
+    <div className="mt-2 space-y-3 rounded-lg glass-inset border border-transparent p-2.5">
+      {/* Existing products with delete */}
       {list.length > 0 && (
         <ul className="space-y-1">
           {list.map((p) => (
-            <li key={p.id} className="flex items-center justify-between text-xs">
-              <span className="truncate">{p.ingredientName}{p.packLabel ? ` · ${p.packLabel}` : ''}</span>
-              <span className="font-semibold">{money(p.pricePerPack)}/pack</span>
+            <li key={p.id} className="flex items-center justify-between gap-2 text-xs">
+              <span className="min-w-0 truncate">{p.ingredientName}{p.packLabel ? ` · ${p.packLabel}` : ''}</span>
+              <span className="flex items-center gap-2">
+                <span className="font-semibold">{money(p.pricePerPack)}/pack</span>
+                <button onClick={() => removeProduct(p.ingredientId)} title="Remove product" className="text-muted hover:text-danger"><Trash2 size={13} /></button>
+              </span>
             </li>
           ))}
         </ul>
       )}
-      <div className="grid grid-cols-[1fr_auto_auto] gap-1.5">
-        <select value={ingredientId} onChange={(e) => setIngredientId(e.target.value)}
-          className="rounded-md glass-inset border border-transparent px-2 py-1.5 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-          <option value="">Add ingredient…</option>
-          {options.map((i) => <option key={i.id} value={i.id}>{i.name}{i.packLabel ? ` (${i.packLabel})` : ''}</option>)}
-        </select>
-        <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="$/pack" value={price} onChange={(e) => setPrice(e.target.value)}
-          className="w-24 rounded-md glass-inset border border-transparent px-2 py-1.5 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
-        <Button variant="ghost" onClick={add} disabled={saving || !ingredientId || !(Number(price) > 0)}>
-          <Plus size={13} /> {saving ? '…' : 'Add'}
-        </Button>
-      </div>
+
+      {/* Checkbox multi-select of remaining ingredients */}
+      {options.length === 0 ? (
+        <p className="text-xs text-muted">All ingredients are priced for this vendor.</p>
+      ) : (
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Add ingredients this vendor sells</div>
+          <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+            {options.map((i) => {
+              const checked = i.id in picked;
+              return (
+                <div key={i.id} className="flex items-center gap-2">
+                  <label className="flex min-w-0 flex-1 items-center gap-2 text-xs">
+                    <input type="checkbox" checked={checked} onChange={() => toggle(i.id)}
+                      className="h-3.5 w-3.5 accent-[var(--brand,#6366f1)]" />
+                    <span className="truncate">{i.name}{i.packLabel ? ` (${i.packLabel})` : ''}</span>
+                  </label>
+                  {checked && (
+                    <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="$/pack" value={picked[i.id]}
+                      onChange={(e) => setPrice(i.id, e.target.value)} autoFocus
+                      className="w-24 rounded-md glass-inset border border-transparent px-2 py-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {anyChecked && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-muted">{rows.length}/{Object.keys(picked).length} priced</span>
+              <Button variant="ghost" onClick={saveAll} disabled={saving || !allPriced}>
+                <Plus size={13} /> {saving ? 'Saving…' : `Save ${rows.length || ''}`.trim()}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

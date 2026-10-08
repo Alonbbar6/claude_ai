@@ -155,6 +155,24 @@ export async function addVendorProduct(vendorId: string, ingredientId: string, p
   });
 }
 
+/** Add/update several products for a vendor in one call. Skips rows with a
+ *  non-positive price or an unknown ingredient. Returns how many were saved. */
+export async function addVendorProducts(vendorId: string, rows: { ingredientId: string; pricePerPack: number }[]) {
+  const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+  if (!vendor) throw new HttpError(404, 'Vendor not found');
+  let saved = 0;
+  for (const r of rows) {
+    if (!r.ingredientId || !(r.pricePerPack > 0)) continue;
+    await addVendorProduct(vendorId, r.ingredientId, r.pricePerPack).then(() => { saved++; }).catch(() => {});
+  }
+  return { saved };
+}
+
+export async function removeVendorProduct(vendorId: string, ingredientId: string) {
+  await prisma.vendorProduct.deleteMany({ where: { vendorId, ingredientId } });
+  return { removed: ingredientId };
+}
+
 /** Compare vendors that can fulfil the current cart. For each vendor, how many
  *  of the cart's ingredients it carries and the total price for the cart. */
 export async function compareVendorsForCart() {

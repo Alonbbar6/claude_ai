@@ -26,7 +26,7 @@ import {
 } from '../lib/actions.js';
 import {
   suggestWeeklyQuantity, applyWeeklySuggestionsToCart, aiAnalyzeCartSuggestions, listVendors, addVendor, removeVendor,
-  addVendorProduct, compareVendorsForCart, placeOrderWithVendor, listPurchaseOrders,
+  addVendorProduct, addVendorProducts, removeVendorProduct, compareVendorsForCart, placeOrderWithVendor, listPurchaseOrders,
   pendingPurchaseOrders, receivePurchaseOrder,
 } from '../lib/vendors.js';
 
@@ -262,6 +262,14 @@ api.post('/vendors/:id/products', wrap(async (req, res) => {
   const { ingredientId, pricePerPack } = req.body ?? {};
   if (!ingredientId || typeof pricePerPack !== 'number') throw new HttpError(400, 'ingredientId and pricePerPack required');
   res.json(await addVendorProduct(req.params.id, ingredientId, pricePerPack));
+}));
+// Batch add/update several products at once (checkbox multi-select UI).
+api.post('/vendors/:id/products/batch', wrap(async (req, res) => {
+  const rows = Array.isArray(req.body?.products) ? req.body.products : [];
+  res.json(await addVendorProducts(req.params.id, rows));
+}));
+api.delete('/vendors/:id/products/:ingredientId', wrap(async (req, res) => {
+  res.json(await removeVendorProduct(req.params.id, req.params.ingredientId));
 }));
 
 // --- Purchase orders ---
