@@ -62,6 +62,15 @@ total (PRD: the AI never calculates). The saved avoid list (Tastes → "Anything
 clashing dishes get a ⚠ chip, sort last and can be hidden. Questions like "where can I get sushi?" show matching dishes, including closed restaurants. The mic
 needs HTTPS (Railway provides it) and the browser's microphone permission.
 
+## Group orders
+
+On the Trattoria menu, **"Order as a group"** creates a 4-letter code / link (`/g/CODE`). Friends open it,
+enter their name and add their own dishes; everyone sees each other's dishes live. The host picks
+**"each pays their own"** or **"split equally"** (exact cents), to go / for here and table, then sends **one**
+order to the kitchen through the normal path (stock check, BarMade API). Each person sees what they pay
+(at the counter / table, no online payment) and the host can mark people as paid. Groups live in Firestore
+`group_orders/{code}` and expire after 6 hours.
+
 ## Before the demo
 
 - **Firestore free tier: ~50k reads/day for the whole team.** It ran out once during testing (every backend call

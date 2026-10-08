@@ -15,6 +15,14 @@ interface OrderLite {
 
 const OPEN = new Set(["RECEIVED", "PREPARING", "READY"]);
 
+function rememberedGroups(): string[] {
+  try {
+    return (JSON.parse(localStorage.getItem("bm_groups") ?? "[]") as string[]).slice(0, 3);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * The customer's orders that aren't finished yet, on every page. An order stays here until the
  * merchant marks it COMPLETED (picked up / served) or CANCELLED in the backend.
@@ -33,7 +41,16 @@ export function ActiveOrders() {
         const res = await fetch(`/api/orders?customerId=${customer!.id}&limit=20`, { cache: "no-store" });
         if (res.ok) {
           const data: { orders: OrderLite[] } = await res.json();
-          if (!stop) setOrders(data.orders.filter((o) => OPEN.has(o.status)));
+          const mine = data.orders.filter((o) => OPEN.has(o.status));
+          // Group orders are placed by the host, so members find theirs through the groups they joined.
+          const groups = await Promise.all(
+            rememberedGroups().map((code) => fetch(`/api/groups/${code}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null)),
+          );
+          for (const g of groups as ({ order: OrderLite | null; fulfillment: OrderLite["fulfillment"] } | null)[]) {
+            const o = g?.order;
+            if (o && OPEN.has(o.status) && !mine.some((m) => m.id === o.id)) mine.push({ ...o, fulfillment: g!.fulfillment, placed_at: "" });
+          }
+          if (!stop) setOrders(mine);
         }
       } catch {
         /* keep the last list through network blips */

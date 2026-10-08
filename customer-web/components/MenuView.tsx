@@ -11,6 +11,7 @@ import { CloseButton, DishImage, Sheet, Stepper } from "./ui";
 import { CATEGORY_LABELS } from "@/lib/content";
 import { Gate } from "./Gate";
 import { ForYou } from "./ForYou";
+import { GroupEntry } from "./GroupOrder";
 import { VOICE_ENABLED, VoiceAssistant } from "./VoiceAssistant";
 
 export function MenuView({
@@ -124,6 +125,8 @@ export function MenuView({
             </span>
           </div>
         )}
+
+        {canOrder && <GroupEntry />}
 
         {canOrder && <ForYou dishes={dishes} onOpen={setOpenDish} />}
 
