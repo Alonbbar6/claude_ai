@@ -276,11 +276,46 @@ export async function advanceDay(): Promise<string> {
   const nextDay = next.toISOString().slice(0, 10);
   await prisma.systemState.upsert({
     where: { id: 'singleton' },
-    create: { id: 'singleton', currentDay: nextDay },
-    update: { currentDay: nextDay, updatedAt: new Date() },
+    create: { id: 'singleton', currentDay: nextDay, closed: true },
+    update: { currentDay: nextDay, closed: true, updatedAt: new Date() },
   });
   cachedNow = null; // force re-read on next getDemoNow
   return nextDay;
+}
+
+/** Reopen: step the business-day cursor BACK one day and mark the restaurant
+ *  open again. The inverse of Close Day's advance, for when a day was closed by
+ *  mistake or to re-run the demo day. */
+export async function openDay(): Promise<string> {
+  const current = await getCurrentDay();
+  const prev = new Date(`${current}T12:00:00Z`);
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  const prevDay = prev.toISOString().slice(0, 10);
+  await prisma.systemState.upsert({
+    where: { id: 'singleton' },
+    create: { id: 'singleton', currentDay: prevDay, closed: false },
+    update: { currentDay: prevDay, closed: false, updatedAt: new Date() },
+  });
+  cachedNow = null;
+  return prevDay;
+}
+
+/** Whether the restaurant is currently closed (customer app stops taking orders). */
+export async function getRestaurantClosed(): Promise<boolean> {
+  const state = await prisma.systemState.findUnique({ where: { id: 'singleton' } });
+  return !!state?.closed;
+}
+
+/** Open or close the restaurant WITHOUT moving the day cursor. Closing here is
+ *  the "we're closed now" switch; the customer app reads it from /api/status. */
+export async function setRestaurantClosed(closed: boolean): Promise<boolean> {
+  const current = await getCurrentDay();
+  await prisma.systemState.upsert({
+    where: { id: 'singleton' },
+    create: { id: 'singleton', currentDay: current, closed },
+    update: { closed, updatedAt: new Date() },
+  });
+  return closed;
 }
 
 function round(n: number, dp = 2): number {

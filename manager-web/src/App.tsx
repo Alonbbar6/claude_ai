@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  LayoutDashboard, Boxes, LineChart, Bell, Sparkles, Moon, Sun, Zap, UtensilsCrossed, CalendarRange, ShoppingCart, Store,
+  LayoutDashboard, Boxes, LineChart, Bell, Sparkles, Moon, Sun, Zap, UtensilsCrossed, CalendarRange, ShoppingCart, Store, ClipboardList,
 } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
 import { AllTime } from './pages/AllTime';
@@ -10,17 +10,19 @@ import { Sales } from './pages/Sales';
 import { Alerts } from './pages/Alerts';
 import { CartPage } from './pages/CartPage';
 import { Vendors } from './pages/Vendors';
+import { Orders } from './pages/Orders';
 import { CloseDay } from './pages/CloseDay';
 import { Button } from './components/ui';
 import { api } from './lib/api';
 
-type Tab = 'dashboard' | 'alltime' | 'inventory' | 'sales' | 'alerts' | 'cart' | 'vendors' | 'closeday';
+type Tab = 'dashboard' | 'alltime' | 'inventory' | 'sales' | 'alerts' | 'cart' | 'vendors' | 'orders' | 'closeday';
 
 const NAV: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'alltime', label: 'All-time', icon: CalendarRange },
   { id: 'inventory', label: 'Inventory', icon: Boxes },
   { id: 'sales', label: 'Sales', icon: LineChart },
+  { id: 'orders', label: 'Orders', icon: ClipboardList },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'cart', label: 'Cart', icon: ShoppingCart },
   { id: 'vendors', label: 'Vendors', icon: Store },
@@ -155,6 +157,7 @@ export default function App() {
               {tab === 'alerts' && <Alerts />}
               {tab === 'cart' && <CartPage onNavigate={setTab} />}
               {tab === 'vendors' && <Vendors />}
+              {tab === 'orders' && <Orders />}
               {tab === 'closeday' && <CloseDay />}
             </motion.div>
           </AnimatePresence>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { Sparkles, RefreshCw, FileText, ShoppingCart } from 'lucide-react';
+import { Sparkles, RefreshCw, FileText, ShoppingCart, DoorOpen } from 'lucide-react';
 import { api } from '../lib/api';
 import { money, num, channelLabel } from '../lib/format';
 import { Card, SectionTitle, Button, Badge } from '../components/ui';
@@ -23,6 +23,19 @@ export function CloseDay() {
   const [advanced, setAdvanced] = useState<{ closed: string; next: string } | null>(null);
   const [pushing, setPushing] = useState(false);
   const [pushMsg, setPushMsg] = useState<string | null>(null);
+  const [reopening, setReopening] = useState(false);
+
+  async function reopenDay() {
+    setReopening(true);
+    try {
+      const r = await api<{ openedDay: string; currentDay: string }>('/open-day', { method: 'POST', body: JSON.stringify({}) });
+      setAdvanced(null);
+      setResp(null);
+      setError(null);
+      setPushMsg(`Reopened — now on ${r.currentDay}`);
+      setTimeout(() => setPushMsg(null), 3500);
+    } finally { setReopening(false); }
+  }
 
   async function pushLowStock() {
     setPushing(true);
@@ -64,6 +77,7 @@ export function CloseDay() {
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" onClick={pushLowStock} disabled={pushing}><ShoppingCart size={16} /> {pushing ? 'Adding…' : pushMsg ?? 'Push low stock to cart'}</Button>
+          <Button variant="ghost" onClick={reopenDay} disabled={reopening}><DoorOpen size={16} /> {reopening ? 'Opening…' : 'Open day'}</Button>
           {resp && <Button variant="ghost" onClick={() => run(true)} disabled={loading}><RefreshCw size={16} /> Regenerate</Button>}
           {!resp && <Button onClick={() => run(false)} disabled={loading}><Sparkles size={16} /> {loading ? 'Generating…' : 'Close day & summarize'}</Button>}
         </div>

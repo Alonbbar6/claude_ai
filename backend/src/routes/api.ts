@@ -14,10 +14,13 @@ import {
   getProjectionForDate,
   getItemProjectionForDate,
   advanceDay,
+  openDay,
+  getRestaurantClosed,
+  setRestaurantClosed,
   getCurrentDay,
 } from '../lib/calc.js';
 import { generateCloseDaySummary, suggestAlertSolutions, type AlertContext } from '../lib/ai.js';
-import { CanonicalOrderSchema, ingestOrder, HttpError, transitionOrderStatus } from '../lib/orders.js';
+import { CanonicalOrderSchema, ingestOrder, HttpError, transitionOrderStatus, precheckOrder } from '../lib/orders.js';
 import {
   eightySixDishesForAlert, setMenuAvailability,
   restoreAvailabilityForIngredient, dishesUsingIngredient, scanExpiries,
@@ -317,6 +320,17 @@ api.post('/menu/:key/availability', wrap(async (req, res) => {
   res.json(await setMenuAvailability(req.params.key, available));
 }));
 
+// Pre-check an order WITHOUT placing or charging it: validates availability +
+// inventory and returns { ok, soldOut, unknownItems, reason }. The customer app
+// calls this before confirming/charging.
+api.post('/orders/precheck', wrap(async (req, res) => {
+  const parsed = CanonicalOrderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: { code: 'BAD_REQUEST', message: parsed.error.issues.map((i) => i.message).join('; ') } });
+  }
+  res.json({ data: await precheckOrder(parsed.data) });
+}));
+
 // --- Orders: the live sync seam for the customer frontend ---
 // Returns the customer-web contract shape: 201 { data: <orderDoc> }.
 api.post('/orders', wrap(async (req, res) => {
@@ -381,6 +395,26 @@ api.post('/simulate/rush', wrap(async (req, res) => {
 
 // --- Current business day cursor ---
 api.get('/day', wrap(async (_req, res) => res.json({ currentDay: await getCurrentDay() })));
+
+// --- Restaurant open/closed status (customer app reads this to stop ordering) ---
+api.get('/status', wrap(async (_req, res) => {
+  const [closed, currentDay] = await Promise.all([getRestaurantClosed(), getCurrentDay()]);
+  res.json({ open: !closed, closed, currentDay });
+}));
+// Toggle open/closed WITHOUT moving the day cursor. Body: { open: boolean } or { closed: boolean }.
+api.post('/status', wrap(async (req, res) => {
+  const body = req.body ?? {};
+  const closed = typeof body.closed === 'boolean' ? body.closed : typeof body.open === 'boolean' ? !body.open : undefined;
+  if (closed === undefined) throw new HttpError(400, 'open (boolean) or closed (boolean) required');
+  await setRestaurantClosed(closed);
+  res.json({ open: !closed, closed });
+}));
+
+// Reopen the day: step the business-day cursor BACK one day and mark open.
+api.post('/open-day', wrap(async (_req, res) => {
+  const newDay = await openDay();
+  res.json({ openedDay: newDay, currentDay: newDay, open: true });
+}));
 
 // --- Close Day: deterministic facts -> LLM phrasing (cached per date) ---
 // By default this also ADVANCES the business day (demo clock moves forward).

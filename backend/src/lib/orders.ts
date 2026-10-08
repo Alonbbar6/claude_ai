@@ -258,6 +258,59 @@ export class HttpError extends Error {
   }
 }
 
+/** DRY-RUN availability + inventory check for a prospective order. Writes
+ *  NOTHING and charges nothing — the customer app calls this BEFORE confirming
+ *  so it can warn "X just sold out" instead of failing at payment. Mirrors the
+ *  checks ingestOrder enforces (unknown item, 86'd/unavailable, insufficient
+ *  stock) and returns a structured verdict. */
+export async function precheckOrder(input: CanonicalOrder) {
+  const refs = input.items.map((i) => (i.item_id ?? i.menuItemId)!);
+  const menuItems = await prisma.menuItem.findMany({
+    where: { OR: [{ key: { in: refs } }, { id: { in: refs } }] },
+    include: { recipeLines: true },
+  });
+  const byKey = new Map(menuItems.map((m) => [m.key, m]));
+  const byId = new Map(menuItems.map((m) => [m.id, m]));
+  const resolve = (line: { item_id?: string; menuItemId?: string }) => {
+    const ref = (line.item_id ?? line.menuItemId)!;
+    return byKey.get(ref) ?? byId.get(ref);
+  };
+
+  const unknown = input.items.filter((l) => !resolve(l)).map((l) => l.item_id ?? l.menuItemId);
+  const unavailable = input.items.map(resolve).filter((m) => m && !m.available).map((m) => m!.name);
+
+  // Aggregate required ingredient usage and compare to live stock.
+  const required = new Map<string, number>();
+  for (const line of input.items) {
+    const mi = resolve(line);
+    if (!mi) continue;
+    for (const rl of mi.recipeLines) required.set(rl.ingredientId, (required.get(rl.ingredientId) ?? 0) + rl.quantity * line.quantity);
+  }
+  const shortIngredientIds: string[] = [];
+  for (const [ingredientId, amount] of required) {
+    const ing = await prisma.ingredient.findUnique({ where: { id: ingredientId }, include: { batches: true } });
+    const have = ing ? ing.batches.reduce((s, b) => s + b.quantity, 0) : 0;
+    if (have < amount) shortIngredientIds.push(ingredientId);
+  }
+  const soldOut = [
+    ...new Set([
+      ...unavailable,
+      ...input.items
+        .map(resolve)
+        .filter((m) => m && m.recipeLines.some((rl) => shortIngredientIds.includes(rl.ingredientId)))
+        .map((m) => m!.name),
+    ]),
+  ];
+
+  const ok = unknown.length === 0 && soldOut.length === 0;
+  return {
+    ok,
+    unknownItems: unknown,
+    soldOut,
+    reason: unknown.length ? 'UNKNOWN_ITEM' : soldOut.length ? 'INSUFFICIENT_INVENTORY' : null,
+  };
+}
+
 // --- ID helpers (keep the ORD-/MOV-/ALERT- scheme from the dataset) ---
 async function nextOrderId(): Promise<string> {
   const last = await prisma.order.findFirst({ orderBy: { id: 'desc' }, select: { id: true } });

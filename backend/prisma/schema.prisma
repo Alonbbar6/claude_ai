@@ -88,6 +88,7 @@ model ShoppingCartItem {
 model SystemState {
   id              String   @id @default("singleton")
   currentDay      String   // YYYY-MM-DD venue-local business day
+  closed          Boolean  @default(false) // true = restaurant closed; customer app stops taking orders
   updatedAt       DateTime @default(now())
 }
 
