@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.env
+.env.local
+.pglite/
+*.tsbuildinfo
+next-env.d.ts
+
+# Firebase credentials — never commit
+*firebase-adminsdk*.json
+service-account*.json
