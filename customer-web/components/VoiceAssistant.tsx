@@ -20,8 +20,8 @@ interface VoiceResult {
 }
 
 /**
- * Floating mic. Speech → /api/voice → either fills the cart and opens it for a one-tap confirm,
- * or shows matching dishes. It never places an order by itself.
+ * Floating mic. Speech → /api/voice → either fills the cart and lists what it added (with undo
+ * and a button to review the order), or shows matching dishes. It never places an order by itself.
  */
 export function VoiceAssistant({
   dishes,
@@ -32,12 +32,14 @@ export function VoiceAssistant({
   onOpenDish: (d: ViewDish) => void;
   onReviewCart: (preset: CartPreset) => void;
 }) {
-  const { t, L, lang, addToCart } = useApp();
+  const { t, L, lang, cart, addToCart, updateQty } = useApp();
   const speech = useSpeech(lang);
   const [heard, setHeard] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<VoiceResult | null>(null);
   const [open, setOpen] = useState(false);
+  // What the last voice request put in the cart, so the customer can see it and undo it.
+  const [added, setAdded] = useState<{ dish: ViewDish; quantity: number }[]>([]);
 
   if (!speech.supported) return null;
 
@@ -45,6 +47,7 @@ export function VoiceAssistant({
     setHeard(text);
     setBusy(true);
     setResult(null);
+    setAdded([]);
     try {
       const res = await fetch("/api/voice", {
         method: "POST",
@@ -55,12 +58,18 @@ export function VoiceAssistant({
       const r: VoiceResult = await res.json();
       setResult(r);
       if (r.intent === "add_to_order" && r.items.length) {
+        const done: typeof added = [];
         for (const it of r.items) {
           const d = dishes.find((x) => x.id === it.dishId);
           if (!d) continue;
-          addToCart({ menuItemId: d.id, name: d.name, image: d.image, unitPrice: d.price, quantity: it.quantity, modifiers: [], modifierLabels: [] });
+          // The cart caps a line at 20, so only count what actually fits.
+          const have = cart.find((l) => l.menuItemId === d.id && l.modifiers.length === 0)?.quantity ?? 0;
+          const quantity = Math.min(it.quantity, 20 - have);
+          if (quantity <= 0) continue;
+          addToCart({ menuItemId: d.id, name: d.name, image: d.image, unitPrice: d.price, quantity, modifiers: [], modifierLabels: [] });
+          done.push({ dish: d, quantity });
         }
-        onReviewCart({ fulfillment: r.fulfillment, table: r.tableNumber });
+        setAdded(done);
       }
     } catch {
       setResult({ intent: "unknown", items: [], fulfillment: null, tableNumber: null, matches: [], reply: t("voice.error.other") });
@@ -69,11 +78,22 @@ export function VoiceAssistant({
     }
   }
 
+  function undo() {
+    for (const a of added) {
+      const line = cart.find((l) => l.menuItemId === a.dish.id && l.modifiers.length === 0);
+      if (line) updateQty(line.lineId, line.quantity - a.quantity);
+    }
+    setAdded([]);
+    setResult(null);
+    setHeard("");
+  }
+
   function toggle() {
     if (speech.listening) return speech.stop();
     setOpen(true);
     setHeard("");
     setResult(null);
+    setAdded([]);
     speech.start(handle);
   }
 
@@ -102,10 +122,25 @@ export function VoiceAssistant({
               )}
               {busy && <p>{t("voice.thinking")}</p>}
               {result && <p className="font-semibold">{result.reply}</p>}
-              {result?.intent === "add_to_order" && result.items.length > 0 && (
-                <button type="button" onClick={() => onReviewCart({ fulfillment: result.fulfillment, table: result.tableNumber })} className="btn-gold w-full py-2 text-sm">
-                  {t("voice.review")} →
-                </button>
+              {result && added.length > 0 && (
+                <>
+                  <ul className="rounded-xl bg-white/10 px-3 py-2">
+                    <li className="text-xs font-bold uppercase tracking-wide text-white/60">{t("voice.added")}</li>
+                    {added.map((a) => (
+                      <li key={a.dish.id} className="font-semibold">
+                        {a.quantity}× {L(a.dish.name)}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={undo} className="flex-1 rounded-full border border-white/30 py-2 text-sm font-bold hover:bg-white/10">
+                      {t("voice.undo")}
+                    </button>
+                    <button type="button" onClick={() => onReviewCart({ fulfillment: result.fulfillment, table: result.tableNumber })} className="btn-gold flex-[2] py-2 text-sm">
+                      {t("voice.review")} →
+                    </button>
+                  </div>
+                </>
               )}
               {result && result.matches.length > 0 && (
                 <div className="flex flex-wrap gap-2 pt-1">
