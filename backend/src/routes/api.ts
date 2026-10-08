@@ -416,6 +416,24 @@ api.post('/open-day', wrap(async (_req, res) => {
   res.json({ openedDay: newDay, currentDay: newDay, open: true });
 }));
 
+// Open-day readiness check: NO AI. Reports low/out ingredients and active alert
+// count so the UI can warn the manager to take action before the new day.
+api.get('/open-day/check', wrap(async (_req, res) => {
+  const [stock, activeAlerts] = await Promise.all([
+    getStockLevels(),
+    prisma.alert.findMany({ where: { status: 'ACTIVE' }, orderBy: { severity: 'asc' } }),
+  ]);
+  const lowOrOut = stock
+    .filter((s) => s.status === 'low' || s.status === 'out')
+    .map((s) => ({ id: s.id, name: s.name, currentStock: s.currentStock, unit: s.unit, status: s.status }));
+  res.json({
+    ok: lowOrOut.length === 0 && activeAlerts.length === 0,
+    lowOrOut,
+    activeAlertCount: activeAlerts.length,
+    alerts: activeAlerts.map((a) => ({ id: a.id, type: a.type, severity: a.severity, ingredient: a.ingredientName, message: a.message })),
+  });
+}));
+
 // --- Close Day: deterministic facts -> LLM phrasing (cached per date) ---
 // By default this also ADVANCES the business day (demo clock moves forward).
 api.post('/close-day', wrap(async (req, res) => {
