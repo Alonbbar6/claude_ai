@@ -390,8 +390,9 @@ struct BarMadeOrdersView: View {
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 HStack(spacing: 6) {
                     if let f = fulfillmentText(order) { Text(f).bold() }
+                    if let s = orderSourceLabel(order.source) { Text("· via \(s)") }
                     Text(order.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    if order.customerName != nil { Text("· \(order.id)") }
+                    if order.customerName != nil { Text("· \(order.displayNumber)") }
                 }
                 .font(.caption2).foregroundStyle(.secondary)
             }
@@ -431,6 +432,7 @@ struct BarMadeOrderView: View {
                 }
                 if let name = order.customerName { InfoRow(label: "Customer", value: name) }
                 if let f = fulfillmentText(order) { InfoRow(label: "Fulfillment", value: f) }
+                if let s = orderSourceLabel(order.source) { InfoRow(label: "Ordered via", value: s) }
                 InfoRow(label: "Placed", value: order.createdAt.formatted(date: .abbreviated, time: .shortened))
                 if order.customerName != nil { InfoRow(label: "Order", value: order.id) }
             }
@@ -562,10 +564,9 @@ struct BarMadeSettingsView: View {
                     InfoRow(label: "Last updated", value: Format.time(at))
                 }
                 Button("Refresh now") { Task { await store.reload() } }
-                Button("Switch restaurant") { Task { await store.select(nil) } }
             }
             Section {
-                TextField(MerchantStore.defaultBarMadeServer, text: $server)
+                TextField(MerchantStore.defaultServer, text: $server)
                     .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Button("Connect") { Task { await store.updateBarMadeServerURL(server) } }
                 if let error = store.barMadeError {

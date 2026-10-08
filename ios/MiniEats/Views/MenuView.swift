@@ -1,109 +1,212 @@
 import SwiftUI
 
+/// Home + menu in one screen, like the web app's restaurant page: greeting,
+/// the active order, the kitchen's card, then dishes by category.
 struct MenuView: View {
-    let restaurant: Restaurant
-    @Environment(AppStore.self) private var store
-
-    /// The latest copy from the store (menu edits, sold-out flags).
-    private var currentRestaurant: Restaurant { store.restaurant(restaurant.id) ?? restaurant }
+    @Environment(CustomerStore.self) private var store
+    @State private var openDish: Dish?
 
     var body: some View {
-        List {
-            Section {
-                HStack(spacing: 14) {
-                    CuisineIcon(cuisine: restaurant.cuisine, size: 64)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(restaurant.cuisine).foregroundStyle(.secondary)
-                        if let a = restaurant.address, !a.isEmpty {
-                            Label(a, systemImage: "mappin.and.ellipse").font(.subheadline)
-                        }
-                        if let p = store.pickupQuotes[restaurant.id] {
-                            Text("Pickup: ready from ~\(Format.minutes(p.readyInMin)) · \(Format.minutes(p.tripMin)) \(p.verb)")
-                                .font(.headline)
-                            Text("\(Format.km(p.distanceKm)) from you").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
+        Group {
+            if let error = store.loadError, store.menu.isEmpty {
+                ContentUnavailableView {
+                    Label("Can't reach the kitchen", systemImage: "wifi.exclamationmark")
+                } description: {
+                    Text("\(error)\n\nServer: \(store.serverURL)\nChange it in Account.")
+                } actions: {
+                    Button("Retry") { Task { await store.load() } }.buttonStyle(.borderedProminent)
                 }
-                .padding(.vertical, 4)
+            } else if store.menu.isEmpty {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Waking up the kitchen… the first load can take up to a minute.")
+                        .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .padding()
+            } else {
+                menu
             }
-
-            ForEach(currentRestaurant.sections, id: \.title) { section in
-                Section(section.title) {
-                    ForEach(section.items) { item in
-                        MenuItemRow(
-                            item: item,
-                            quantity: store.quantity(of: item.id, in: restaurant.id),
-                            onAdd: { store.add(item, from: restaurant.id) },
-                            onRemove: { store.remove(item) })
+        }
+        .navigationTitle("Hi, \(store.name ?? "") 👋")
+        .toolbar {
+            if store.cartCount > 0 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { store.showCart = true } label: {
+                        Label("\(store.cartCount)", systemImage: "bag.fill").labelStyle(.titleAndIcon)
                     }
+                    .accessibilityIdentifier("cart-button")
                 }
             }
         }
-        .navigationTitle(restaurant.name)
-        // Pick up menu edits and sell-outs from the restaurant side.
-        .refreshable { await store.refreshRestaurants() }
-        .task { await store.refreshRestaurants() }
+        .sheet(item: $openDish) { DishSheet(dish: $0) }
         .safeAreaInset(edge: .bottom) {
-            if store.cartRestaurantId == restaurant.id && store.cartCount > 0 {
+            if store.cartCount > 0 {
                 Button { store.showCart = true } label: {
                     HStack {
-                        Text("View cart")
+                        Text("\(store.cartCount)")
+                            .font(.subheadline.weight(.black)).foregroundStyle(Color.night)
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Color.gold, in: Capsule())
+                        Text("View order").fontWeight(.bold)
                         Spacer()
-                        Text("\(store.cartCount) · \(Format.money(store.cartTotal))")
+                        Text(Format.money(store.cartTotal)).fontWeight(.black)
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20).padding(.vertical, 16)
+                    .background(Color.night, in: Capsule())
+                    .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .padding()
-                .background(.bar)
+                .padding(.horizontal).padding(.bottom, 6)
+                .accessibilityIdentifier("view-order")
             }
         }
     }
-}
 
-private struct MenuItemRow: View {
-    let item: MenuItem
-    let quantity: Int
-    let onAdd: () -> Void
-    let onRemove: () -> Void
+    private var menu: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("What are we eating today?").foregroundStyle(.secondary)
 
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name).font(.body.weight(.medium))
-                if let d = item.description, !d.isEmpty {
-                    Text(d).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                if let active = store.activeOrder {
+                    Button {
+                        store.selectedTab = .orders
+                        store.ordersPath = [active.id]
+                    } label: {
+                        HStack {
+                            Circle().fill(Color.gold).frame(width: 10, height: 10)
+                            Text("Your order \(active.displayNumber) is \(orderStatusTitle(active.status).lowercased())")
+                                .fontWeight(.semibold)
+                            Spacer()
+                            Text("Track →").fontWeight(.bold).foregroundStyle(Color.gold)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(14)
+                        .background(Color.night, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .accessibilityIdentifier("active-order")
                 }
-                HStack(spacing: 6) {
-                    Text(Format.money(item.price)).font(.subheadline).foregroundStyle(.secondary)
-                    if let p = item.prepMin, p <= 3 {
-                        Text("ready in ~\(Int(p.rounded())) min")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.brand.opacity(0.15), in: Capsule())
-                            .foregroundStyle(Color.brand)
+
+                restaurantCard
+
+                ForEach(store.sections, id: \.title) { section in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(section.title).font(.title3.weight(.black))
+                        ForEach(section.dishes) { dish in
+                            DishRow(dish: dish) { openDish = dish }
+                        }
                     }
                 }
+
+                Text("Classroom demo · synthetic data")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 12)
             }
-            .opacity(item.orderable ? 1 : 0.45)
-            Spacer()
-            if !item.orderable {
-                Text(item.isSoldOut ? "Sold out" : "Unavailable")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color(.tertiarySystemFill), in: Capsule())
-                    .foregroundStyle(.secondary)
-            } else if quantity > 0 {
-                Button(action: onRemove) { Image(systemName: "minus.circle.fill") }
-                    .accessibilityLabel("Remove \(item.name)")
-                Text("\(quantity)").monospacedDigit().frame(minWidth: 20)
+            .padding()
+        }
+        .background(Color.cream)
+        .refreshable { await store.load() }
+    }
+
+    private var restaurantCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Chip(text: "● Open now", background: .fresh, foreground: .white)
+                Chip(text: "⏱ Ready in ~\(CustomerStore.restaurantPrepMinutes) min", background: .white, foreground: .night)
             }
-            if item.orderable {
-                Button(action: onAdd) { Image(systemName: "plus.circle.fill") }
-                    .accessibilityLabel("Add \(item.name)")
+            Text("ITALIAN · LITTLE ITALY").font(.caption.weight(.black)).foregroundStyle(Color.goldText).padding(.top, 6)
+            Text(CustomerStore.restaurantName).font(.title.weight(.black)).foregroundStyle(Color.night)
+            Text(CustomerStore.restaurantTagline).foregroundStyle(Color.inkSoft)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+    }
+}
+
+/// One dish in the menu list. Tap for details and quantity; "+" adds one.
+struct DishRow: View {
+    @Environment(CustomerStore.self) private var store
+    let dish: Dish
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(alignment: .top, spacing: 12) {
+                DishImage(url: dish.imageURL, size: 72)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(dish.name).font(.body.weight(.bold)).foregroundStyle(Color.night)
+                        if dish.isSpecial { Chip(text: "★ Chef's special", background: .gold, foreground: .night) }
+                    }
+                    if let d = dish.description, !d.isEmpty {
+                        Text(d).font(.caption).foregroundStyle(Color.inkSoft).lineLimit(2)
+                    } else {
+                        Text(dish.item.ingredients.map(\.ingredientName).joined(separator: ", "))
+                            .font(.caption).foregroundStyle(Color.inkSoft).lineLimit(2)
+                    }
+                    HStack(spacing: 6) {
+                        Text(Format.money(dish.price)).font(.subheadline.weight(.black)).foregroundStyle(Color.goldText)
+                        switch dish.availability {
+                        case .soldOut: Chip(text: "Sold out", background: .night, foreground: .white)
+                        case .low(let n): Chip(text: "Only \(n) left", background: .warn, foreground: .white)
+                        case .available: EmptyView()
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                if dish.orderable {
+                    ZStack {
+                        Circle().fill(Color.gold).frame(width: 32, height: 32)
+                        if store.quantity(of: dish.id) > 0 {
+                            Text("\(store.quantity(of: dish.id))").font(.subheadline.weight(.black)).foregroundStyle(Color.night)
+                        } else {
+                            Image(systemName: "plus").font(.subheadline.weight(.black)).foregroundStyle(Color.night)
+                        }
+                    }
+                    .onTapGesture { store.add(dish) }
+                    .accessibilityLabel("Add \(dish.name)")
+                    .accessibilityIdentifier("add-\(dish.id)")
+                }
+            }
+            .padding(12)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .opacity(dish.orderable ? 1 : 0.6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("dish-\(dish.id)")
+    }
+}
+
+/// Photo from the web app when configured, otherwise a warm placeholder.
+struct DishImage: View {
+    let url: URL?
+    var size: CGFloat = 72
+    var corner: CGFloat = 12
+
+    var body: some View {
+        Group {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        placeholder
+                    }
+                }
+            } else {
+                placeholder
             }
         }
-        .font(.title3)
-        .buttonStyle(.borderless)
-        .foregroundStyle(Color.primary)
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: corner))
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            Color.goldTint
+            Image(systemName: "fork.knife").foregroundStyle(Color.gold)
+        }
     }
 }

@@ -2,10 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BarMadeServerURL</key>
+	<string>$(BARMADE_API_URL)</string>
+	<key>BarMadeWebURL</key>
+	<string>$(BARMADE_WEB_URL)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Mini Eats</string>
+	<string>BarMade</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconName</key>
@@ -22,23 +26,13 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>MiniEatsServerURL</key>
-	<string>$(MINIEATS_SERVER_URL)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connects to your Mini Eats development server.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>With "Always", we can keep updating when to leave for a pickup order while the app is in the background, so the "Time to head out" alert is on time.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Your location is shown on the order map and, for pickup orders, tells us when you should leave so you arrive as your food is ready.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-	</array>
+	<string>Connects to a BarMade server on your network.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

@@ -3,41 +3,34 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		177370E1C80E4913983537E3 /* NearbyMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 752C0E4E7572BBAFA5408F64 /* NearbyMapView.swift */; };
 		248A53DAB8904A3D3B922F1B /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A5118F0BE42476B10BBF48 /* RootView.swift */; };
 		2582DE6CC335E118EB36A4B5 /* CartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417BE3F21B25D06CC220F5FC /* CartView.swift */; };
-		2EBF07A6A0BB3B850CF61D89 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D9A1595335CE1589DDC95B /* APIClient.swift */; };
-		3748D07B953D92E22FEE6DAE /* OrderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77A38C4F31F0A8AEF9CA1807 /* OrderDetailView.swift */; };
+		2D34CCF60F32AD8A11BE3905 /* DishSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B5E455B755CD65988E4FA98 /* DishSheet.swift */; };
 		3A276FA8CA85F83E6FDD03C8 /* MiniEatsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71E584C1B8905DA37F3B295E /* MiniEatsApp.swift */; };
-		3DF7AC362B1B1BCEE175AC57 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B7711283E12C17B6BB7019 /* Components.swift */; };
-		5D21A023275D26D348EDF585 /* TrackingMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F8BEC6ECD1FD5484BF7759D /* TrackingMap.swift */; };
+		54991AC1F387A9502D4254E8 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0EEB3FB83A402034D223D0 /* APIClient.swift */; };
+		6961DD85FB80C5E62D60C066 /* BarMade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609D5896FA3B93B331DB2369 /* BarMade.swift */; };
 		6BAFF88187A43995AE74E688 /* MerchantUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1822AB6605072557562BF466 /* MerchantUITests.swift */; };
-		6CDFC16C96EA0620A1B6B23E /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817BB2C78690C10A2457C599 /* AppStore.swift */; };
-		6D0D615E0BDE17D8954F7586 /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2108A6E07F08850C81D5A936 /* LocationService.swift */; };
 		743B7E4AFE92EB85EA8DA88E /* OrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F04A5CC19D0A65FDE85E8663 /* OrdersView.swift */; };
+		744A428597E6F8E808F6E2B8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55DB21C8F3DE67DF4CE532F0 /* Components.swift */; };
 		769BDFFBAFFE614242F3E06F /* OrderFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CB1C8EA9FEA7106E5C828B /* OrderFlowUITests.swift */; };
 		856A0C3F7FBB28759010C956 /* MerchantStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CC6D6B712E9CEAE36B857FE /* MerchantStore.swift */; };
-		88979C601E0312A3672C7D8D /* BarMade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B36D97D922AD99C3194259D /* BarMade.swift */; };
 		88F59BE1B537F68B512D6BF4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E4959754146FF925F93C4E7E /* Assets.xcassets */; };
-		A04084752A3D48C0286603E3 /* DecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625230F8146DA33D39838081 /* DecodingTests.swift */; };
+		A3E51E9B6C49A125AC5F398D /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA9491B3011B0B9421F516C /* WelcomeView.swift */; };
 		ABF7CABDCFA997BE3F20F1CD /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E33BF6B88BED032C46E256 /* MenuView.swift */; };
 		AF548E7F2E2233407FAD820F /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24BDA47977998F352DCA9534 /* AccountView.swift */; };
-		B0E4FA517A84B33F01064F18 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7A7584A20B0C87DBA3621E /* NotificationsView.swift */; };
-		B581EB183E7F44F760F4CBBE /* MerchantModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92EA7ECB9744C7423A8021F6 /* MerchantModels.swift */; };
 		BC153AE7A26939EA81E370DD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 876FCC6A9A6453149CAEC29A /* Assets.xcassets */; };
-		C69DA27B1F1D05C30069DFE5 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B7711283E12C17B6BB7019 /* Components.swift */; };
+		BF3E07F2D6311B6E299FAC0C /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55DB21C8F3DE67DF4CE532F0 /* Components.swift */; };
+		CB02115ABD9FCD5453218EC8 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0EEB3FB83A402034D223D0 /* APIClient.swift */; };
 		CB0EF5D99E0790A282DC9968 /* BarMadeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF76056A461F3F7226355157 /* BarMadeViews.swift */; };
-		D1E6780487595AABEC118961 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D9A1595335CE1589DDC95B /* APIClient.swift */; };
-		D25D74861586DCD76E4C8402 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEAA20C493FB62936A405C8F /* Models.swift */; };
-		D3AF192F948CD1E0945602E8 /* RestaurantListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCC312B76ABE53514225BBED /* RestaurantListView.swift */; };
-		D4B487AB61E81B2F7194D28D /* MenuCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E42D2A7A6530BFE0A4F1B54E /* MenuCatalogView.swift */; };
+		D54EBD5B4C81BAE0D3C725C2 /* BarMade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609D5896FA3B93B331DB2369 /* BarMade.swift */; };
 		E2EA923516AF561123A31E30 /* MerchantApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEDA63C54D2F844A955FCE28 /* MerchantApp.swift */; };
-		F3F44572E34EF700BB5DD556 /* InventoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D97DF0FDE676DF040094BFF /* InventoryView.swift */; };
-		F822171F650D59277703FF19 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEAA20C493FB62936A405C8F /* Models.swift */; };
+		E6B869EBC386A3329D5D02AE /* OrderTrackerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD2A3BD1F704D93E2E3C604 /* OrderTrackerView.swift */; };
+		EB17648DC673F562AB28BA75 /* CustomerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2215FB2C7837F5E7C856341 /* CustomerStore.swift */; };
+		EE55A54C773903DEB7883AEF /* BarMadeDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1BAADFA92FBC877E600F70 /* BarMadeDecodingTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -68,37 +61,30 @@
 		00FB5195E3AA9C34B7F4C587 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		12CB1C8EA9FEA7106E5C828B /* OrderFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderFlowUITests.swift; sourceTree = "<group>"; };
 		1822AB6605072557562BF466 /* MerchantUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantUITests.swift; sourceTree = "<group>"; };
-		2108A6E07F08850C81D5A936 /* LocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationService.swift; sourceTree = "<group>"; };
 		24BDA47977998F352DCA9534 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
-		32D9A1595335CE1589DDC95B /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		2B5E455B755CD65988E4FA98 /* DishSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DishSheet.swift; sourceTree = "<group>"; };
+		3AD2A3BD1F704D93E2E3C604 /* OrderTrackerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderTrackerView.swift; sourceTree = "<group>"; };
 		417BE3F21B25D06CC220F5FC /* CartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CartView.swift; sourceTree = "<group>"; };
+		55DB21C8F3DE67DF4CE532F0 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		5C1BAADFA92FBC877E600F70 /* BarMadeDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarMadeDecodingTests.swift; sourceTree = "<group>"; };
 		5CC6D6B712E9CEAE36B857FE /* MerchantStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantStore.swift; sourceTree = "<group>"; };
-		625230F8146DA33D39838081 /* DecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodingTests.swift; sourceTree = "<group>"; };
-		636B14A456904ECDF43916F8 /* MiniEats.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MiniEats.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		6B36D97D922AD99C3194259D /* BarMade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarMade.swift; sourceTree = "<group>"; };
+		609D5896FA3B93B331DB2369 /* BarMade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarMade.swift; sourceTree = "<group>"; };
+		636B14A456904ECDF43916F8 /* MiniEats.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MiniEats.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7008F19FB22C524505F5EAF1 /* MiniEatsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MiniEatsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		701C0672B5BB85ED43417134 /* MiniEatsUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MiniEatsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		71E584C1B8905DA37F3B295E /* MiniEatsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniEatsApp.swift; sourceTree = "<group>"; };
-		752C0E4E7572BBAFA5408F64 /* NearbyMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyMapView.swift; sourceTree = "<group>"; };
-		77A38C4F31F0A8AEF9CA1807 /* OrderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderDetailView.swift; sourceTree = "<group>"; };
-		817BB2C78690C10A2457C599 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		7A0EEB3FB83A402034D223D0 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		876FCC6A9A6453149CAEC29A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		88A5118F0BE42476B10BBF48 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
-		8D97DF0FDE676DF040094BFF /* InventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryView.swift; sourceTree = "<group>"; };
-		92EA7ECB9744C7423A8021F6 /* MerchantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantModels.swift; sourceTree = "<group>"; };
-		9F8BEC6ECD1FD5484BF7759D /* TrackingMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingMap.swift; sourceTree = "<group>"; };
-		AC7A7584A20B0C87DBA3621E /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
 		B4E33BF6B88BED032C46E256 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		BDBF30AD0A6BBE207CA2556E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BE483B8AB8EB7522F10F7DAC /* MiniEatsMerchantUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MiniEatsMerchantUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		BEAA20C493FB62936A405C8F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		CCC312B76ABE53514225BBED /* RestaurantListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestaurantListView.swift; sourceTree = "<group>"; };
-		D0B7711283E12C17B6BB7019 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		CFA9491B3011B0B9421F516C /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		D9D09291A9F3EB4A5DCA504C /* MiniEatsMerchant.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MiniEatsMerchant.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		E42D2A7A6530BFE0A4F1B54E /* MenuCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuCatalogView.swift; sourceTree = "<group>"; };
 		E4959754146FF925F93C4E7E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EF76056A461F3F7226355157 /* BarMadeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarMadeViews.swift; sourceTree = "<group>"; };
 		F04A5CC19D0A65FDE85E8663 /* OrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrdersView.swift; sourceTree = "<group>"; };
+		F2215FB2C7837F5E7C856341 /* CustomerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomerStore.swift; sourceTree = "<group>"; };
 		FEDA63C54D2F844A955FCE28 /* MerchantApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -106,13 +92,10 @@
 		4B8F234441CE16CCA080FA51 /* MiniEats */ = {
 			isa = PBXGroup;
 			children = (
-				32D9A1595335CE1589DDC95B /* APIClient.swift */,
-				817BB2C78690C10A2457C599 /* AppStore.swift */,
 				876FCC6A9A6453149CAEC29A /* Assets.xcassets */,
+				F2215FB2C7837F5E7C856341 /* CustomerStore.swift */,
 				00FB5195E3AA9C34B7F4C587 /* Info.plist */,
-				2108A6E07F08850C81D5A936 /* LocationService.swift */,
 				71E584C1B8905DA37F3B295E /* MiniEatsApp.swift */,
-				BEAA20C493FB62936A405C8F /* Models.swift */,
 				DA3138B1A905FB7F37FF2017 /* Views */,
 			);
 			path = MiniEats;
@@ -154,8 +137,19 @@
 				7DB2663A3DBFE0E04582490B /* MiniEatsMerchantUITests */,
 				E16A6382D84B1B28405067DD /* MiniEatsTests */,
 				5DD0648F7DA477D41D0AB96C /* MiniEatsUITests */,
+				D0105234DF0DB60CCD0FA21E /* Shared */,
 				74C4EA9DD0FB4E32A40D934B /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		D0105234DF0DB60CCD0FA21E /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				7A0EEB3FB83A402034D223D0 /* APIClient.swift */,
+				609D5896FA3B93B331DB2369 /* BarMade.swift */,
+				55DB21C8F3DE67DF4CE532F0 /* Components.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		DA3138B1A905FB7F37FF2017 /* Views */ = {
@@ -163,15 +157,12 @@
 			children = (
 				24BDA47977998F352DCA9534 /* AccountView.swift */,
 				417BE3F21B25D06CC220F5FC /* CartView.swift */,
-				D0B7711283E12C17B6BB7019 /* Components.swift */,
+				2B5E455B755CD65988E4FA98 /* DishSheet.swift */,
 				B4E33BF6B88BED032C46E256 /* MenuView.swift */,
-				752C0E4E7572BBAFA5408F64 /* NearbyMapView.swift */,
-				AC7A7584A20B0C87DBA3621E /* NotificationsView.swift */,
-				77A38C4F31F0A8AEF9CA1807 /* OrderDetailView.swift */,
 				F04A5CC19D0A65FDE85E8663 /* OrdersView.swift */,
-				CCC312B76ABE53514225BBED /* RestaurantListView.swift */,
+				3AD2A3BD1F704D93E2E3C604 /* OrderTrackerView.swift */,
 				88A5118F0BE42476B10BBF48 /* RootView.swift */,
-				9F8BEC6ECD1FD5484BF7759D /* TrackingMap.swift */,
+				CFA9491B3011B0B9421F516C /* WelcomeView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -180,10 +171,8 @@
 			isa = PBXGroup;
 			children = (
 				E4959754146FF925F93C4E7E /* Assets.xcassets */,
-				6B36D97D922AD99C3194259D /* BarMade.swift */,
 				BDBF30AD0A6BBE207CA2556E /* Info.plist */,
 				FEDA63C54D2F844A955FCE28 /* MerchantApp.swift */,
-				92EA7ECB9744C7423A8021F6 /* MerchantModels.swift */,
 				5CC6D6B712E9CEAE36B857FE /* MerchantStore.swift */,
 				FE166F8FDAC463D608537F72 /* Views */,
 			);
@@ -193,7 +182,7 @@
 		E16A6382D84B1B28405067DD /* MiniEatsTests */ = {
 			isa = PBXGroup;
 			children = (
-				625230F8146DA33D39838081 /* DecodingTests.swift */,
+				5C1BAADFA92FBC877E600F70 /* BarMadeDecodingTests.swift */,
 			);
 			path = MiniEatsTests;
 			sourceTree = "<group>";
@@ -202,8 +191,6 @@
 			isa = PBXGroup;
 			children = (
 				EF76056A461F3F7226355157 /* BarMadeViews.swift */,
-				8D97DF0FDE676DF040094BFF /* InventoryView.swift */,
-				E42D2A7A6530BFE0A4F1B54E /* MenuCatalogView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -326,6 +313,7 @@
 						TestTargetID = DCDE18AEB6187BFDCE915A65;
 					};
 					DCDE18AEB6187BFDCE915A65 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -340,6 +328,7 @@
 			);
 			mainGroup = C35DD95B610792EBCDB4541B;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -376,16 +365,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2EBF07A6A0BB3B850CF61D89 /* APIClient.swift in Sources */,
-				88979C601E0312A3672C7D8D /* BarMade.swift in Sources */,
+				CB02115ABD9FCD5453218EC8 /* APIClient.swift in Sources */,
+				D54EBD5B4C81BAE0D3C725C2 /* BarMade.swift in Sources */,
 				CB0EF5D99E0790A282DC9968 /* BarMadeViews.swift in Sources */,
-				3DF7AC362B1B1BCEE175AC57 /* Components.swift in Sources */,
-				F3F44572E34EF700BB5DD556 /* InventoryView.swift in Sources */,
-				D4B487AB61E81B2F7194D28D /* MenuCatalogView.swift in Sources */,
+				BF3E07F2D6311B6E299FAC0C /* Components.swift in Sources */,
 				E2EA923516AF561123A31E30 /* MerchantApp.swift in Sources */,
-				B581EB183E7F44F760F4CBBE /* MerchantModels.swift in Sources */,
 				856A0C3F7FBB28759010C956 /* MerchantStore.swift in Sources */,
-				D25D74861586DCD76E4C8402 /* Models.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -401,7 +386,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A04084752A3D48C0286603E3 /* DecodingTests.swift in Sources */,
+				EE55A54C773903DEB7883AEF /* BarMadeDecodingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -417,22 +402,19 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D1E6780487595AABEC118961 /* APIClient.swift in Sources */,
+				54991AC1F387A9502D4254E8 /* APIClient.swift in Sources */,
 				AF548E7F2E2233407FAD820F /* AccountView.swift in Sources */,
-				6CDFC16C96EA0620A1B6B23E /* AppStore.swift in Sources */,
+				6961DD85FB80C5E62D60C066 /* BarMade.swift in Sources */,
 				2582DE6CC335E118EB36A4B5 /* CartView.swift in Sources */,
-				C69DA27B1F1D05C30069DFE5 /* Components.swift in Sources */,
-				6D0D615E0BDE17D8954F7586 /* LocationService.swift in Sources */,
+				744A428597E6F8E808F6E2B8 /* Components.swift in Sources */,
+				EB17648DC673F562AB28BA75 /* CustomerStore.swift in Sources */,
+				2D34CCF60F32AD8A11BE3905 /* DishSheet.swift in Sources */,
 				ABF7CABDCFA997BE3F20F1CD /* MenuView.swift in Sources */,
 				3A276FA8CA85F83E6FDD03C8 /* MiniEatsApp.swift in Sources */,
-				F822171F650D59277703FF19 /* Models.swift in Sources */,
-				177370E1C80E4913983537E3 /* NearbyMapView.swift in Sources */,
-				B0E4FA517A84B33F01064F18 /* NotificationsView.swift in Sources */,
-				3748D07B953D92E22FEE6DAE /* OrderDetailView.swift in Sources */,
+				E6B869EBC386A3329D5D02AE /* OrderTrackerView.swift in Sources */,
 				743B7E4AFE92EB85EA8DA88E /* OrdersView.swift in Sources */,
-				D3AF192F948CD1E0945602E8 /* RestaurantListView.swift in Sources */,
 				248A53DAB8904A3D3B922F1B /* RootView.swift in Sources */,
-				5D21A023275D26D348EDF585 /* TrackingMap.swift in Sources */,
+				A3E51E9B6C49A125AC5F398D /* WelcomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -548,7 +530,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8CN54MQ3P6;
 				INFOPLIST_FILE = MiniEats/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -564,6 +545,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				BARMADE_API_URL = "https://barmade-riw5.onrender.com";
+				BARMADE_WEB_URL = "";
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -613,7 +596,6 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MINIEATS_SERVER_URL = "https://stubble-grumble-same.ngrok-free.dev";
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -631,7 +613,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8CN54MQ3P6;
 				INFOPLIST_FILE = MiniEats/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -698,6 +679,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				BARMADE_API_URL = "https://barmade-riw5.onrender.com";
+				BARMADE_WEB_URL = "";
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -741,7 +724,6 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MINIEATS_SERVER_URL = "https://stubble-grumble-same.ngrok-free.dev";
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

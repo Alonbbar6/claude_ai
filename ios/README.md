@@ -1,59 +1,56 @@
-# Mini Eats — iOS app
+# BarMade — iOS apps
 
-SwiftUI client (iOS 17+) for the Python/FastAPI backend in the repo root. Uber Eats / DoorDash-style flow:
+Two SwiftUI apps (iOS 17+) that are native clients of the **BarMade API** — the team's
+Express + Firestore backend on Render (`https://barmade-riw5.onrender.com`). The customer web
+app (`../customer-web/`, Next.js) talks to the same backend, so a phone order and a web order
+are the same ticket in the kitchen.
 
-| Tab | What it does | Backend |
-|---|---|---|
-| **Home** | Restaurants with a live ML-predicted ETA and distance → menu → cart | `GET /api/restaurants`, `POST /api/predict/eta` |
-| **Cart** (sheet) | Line items, total, **Delivery / Pickup**. Delivery: ETA quote that re-predicts as the cart or weather changes. Pickup: food-ready time, your trip (drive/walk from your GPS location), **when to leave** | `POST /api/predict/eta`, `POST /api/predict/pickup`, `POST /api/orders` |
-| **Orders** | Delivery: ETA, delay risk, timeline, route, courier dispatch plan. Pickup: live **"Leave in m:ss"** countdown, re-planned as you move, Drive/Walk switch, **Get directions** (Apple Maps), **I've picked it up** | `GET /api/orders/{id}`, `/pickup-plan`, `/collect`, `/advance`, `/refresh-eta`, `/cancel` |
-| **Alerts** | Every notification with per-channel delivery status (push/SMS/email/in-app, retries) | `GET /api/notifications`, `WS /ws/{user_id}` |
-| **Account** | Switch user, notification channels, quiet hours (saved to backend), server URL | `PUT /api/users/{id}/preferences` |
+```
+iPhone  BarMade app ───┐                                    ┌─── BarMade Merchant (iPhone/iPad)
+                       ├──► BarMade API (Render) ◄──────────┤      inventory · menu · tickets ·
+Web     customer-web ──┘    menu · stock · orders · status  └───   status buttons · alerts
+                 └──── photos & descriptions (optional, /api/menu) ────► BarMade app
+```
 
-For pickup, the app also schedules a local **"Time to head out"** reminder at the planned
-leave time. It fires even if the app is suspended and is replaced if the server sends its own.
-Location is "While Using" only and runs only while a pickup is quoted or tracked.
+| App | Target | Bundle id | What it does |
+|---|---|---|---|
+| **BarMade** (customer) | `MiniEats` | `com.minieats.app` | Name-only sign in → menu with live "Sold out" / "Only n left" from batch stock → cart with **To go / For here + table** → order sent to the kitchen → live tracker (Received → Preparing → Ready → Picked up, polled every 3 s) → order history |
+| **BarMade Merchant** (kitchen) | `MiniEatsMerchant` | `com.minieats.merchant` | Tickets from the web and the iPhone app (name, to go / for here, table, "via Web / iPhone app"), one-tap status moves, batch inventory with expiry, menu with portions left, alerts |
 
-Live updates arrive over the WebSocket. Each one shows an in-app banner, files an iOS
-local notification, and refreshes the order. Tracking also polls every 3 s as a fallback.
+Backend calls (both apps, `Shared/BarMade.swift`): `GET /api/menu`, `GET /api/inventory`,
+`GET /api/orders`, `GET /api/orders/:id`, `POST /api/orders`, `PATCH /api/orders/:id/status`,
+`GET /api/alerts`. Orders are posted with the same fields as the web app
+(`items`, `channel: "barmade"`, `source: "barmade-ios"`, `fulfillment`, `tableNumber`, `customerName`).
 
-## Eats Merchant (restaurant app)
-
-A second app target, `MiniEatsMerchant` (iPhone + iPad), for restaurant staff. It shares
-`Models.swift`, `APIClient.swift` and `Components.swift` with the customer app.
-
-| Tab | What it does | Backend (`/api/merchant/restaurants/{id}/…`) |
-|---|---|---|
-| **Menu** | Items grouped by category. Each item has an availability switch, a **Sold out** badge with the reason ("Out of beef patties"), and an editor for name, description, price, category and **recipe** (ingredients used per item). Categories can be added, renamed, reordered and deleted | `menu`, `items`, `categories`, `categories/reorder` |
-| **Inventory** | Ingredients with problems first, a stock bar against par, **"Runs out in ~7 h"** and a suggested reorder. Detail view: forecast, portions left, which items use it, **Restock** (prefilled to par), **Stock count**, **Record waste**, and a movement history | `inventory`, `inventory/{id}/adjust`, `inventory/{id}/history` |
-| **Alerts** | Low-stock and out-of-stock alerts, raised when a level is first crossed | `alerts` |
-
-How it connects to customers: orders deduct recipe amounts from stock, and cancellations
-return them. When an ingredient can't cover one portion, the items that use it are
-automatically **sold out** in the customer app, and they come back on restock. Switching an
-item off works the same way. The backend also refuses orders it can't fulfil (409).
-Stock levels refresh every 10 s.
-
-Run: select the **MiniEatsMerchant** scheme, then ⌘R. UI test: `xcodebuild … -scheme MiniEatsMerchant test`.
-Use a fresh backend for it, because it changes menu and stock data.
-Set `TEST_RUNNER_SERVER_URL=http://127.0.0.1:8001` to point any UI test at a separate server.
+Optional: under **Account → Web app** enter the customer web app's URL. The iPhone menu then
+shows the same photos, descriptions and categories as the web menu (`GET {web}/api/menu`).
+Without it, dishes show their ingredients.
 
 ## Run
 
 ```bash
-# 1. Backend (from the repo root)
-.venv/bin/uvicorn app.main:app --reload            # simulator
-.venv/bin/uvicorn app.main:app --host 0.0.0.0      # physical iPhone
-
-# 2. App
 cd ios
 brew install xcodegen      # once
 xcodegen generate          # creates MiniEats.xcodeproj from project.yml
-open MiniEats.xcodeproj    # pick an iPhone simulator, ⌘R
+open MiniEats.xcodeproj    # scheme MiniEats (customer) or MiniEatsMerchant, ⌘R
 ```
 
-On a physical iPhone, set your signing team in Xcode and enter `http://<your-mac-LAN-IP>:8000`
-under **Account → Server**.
+Both apps point at the team's backend by default (`BARMADE_API_URL` in `project.yml`). To
+build against a different one: `BARMADE_API_URL=https://… xcodegen generate`, or change it in
+the app under Account / Settings.
+
+### Try it without touching the real kitchen
+
+Every order placed on the team's backend deducts real stock. For local testing there is a
+stand-in with the same routes and shapes:
+
+```bash
+node scripts/barmade-stub.mjs                 # http://127.0.0.1:8787, in-memory, resets on restart
+```
+
+Then set the server to `http://127.0.0.1:8787` in **Account** (customer) / **Settings**
+(merchant) in the Simulator, or launch with `-barMadeServerURL http://127.0.0.1:8787`.
+Place an order in the customer app, move it in the merchant app, watch the tracker follow.
 
 ## Tests
 
@@ -62,27 +59,36 @@ xcodebuild -project MiniEats.xcodeproj -scheme MiniEats \
   -destination 'platform=iOS Simulator,name=iPhone 17' test
 ```
 
-- `MiniEatsTests`: JSON contract with the Python models (snake_case, microsecond ISO dates, nulls).
-- `MiniEatsUITests`: end-to-end with the backend running. Delivery: browse, add to cart, check out,
-  track until delivered, check notifications. Pickup: choose Pickup, check the leave
-  countdown, switch to Walk (it re-plans), advance until ready, mark it picked up. Place the
-  simulator near Grill House first: `xcrun simctl location booted set 25.7930,-80.1330`. Set
-  `TEST_RUNNER_SHOT_DIR=/path` to save a screenshot of each step.
+- `MiniEatsTests/BarMadeDecodingTests.swift`: the JSON contract with the BarMade API
+  (camelCase fields, zone-less timestamps, the order body the web app sends).
+- `MiniEatsUITests/OrderFlowUITests.swift`: end to end against the stub (start it first):
+  name → menu → dish → cart (for here, table 7) → order → the test moves it through
+  PREPARING / READY / COMPLETED over the API and the tracker follows.
+- `MiniEatsMerchantUITests/MerchantUITests.swift` (scheme `MiniEatsMerchant`): a ticket placed
+  over the API shows up with the customer's name and is moved Received → Preparing → Ready by tapping.
+
+`TEST_RUNNER_SERVER_URL=http://host:port` points the UI tests at another server;
+`TEST_RUNNER_SHOT_DIR=/path` saves a screenshot of each step.
 
 ## Layout
 
 ```
-MiniEats/
-  MiniEatsApp.swift        app entry, notification delegate
-  AppStore.swift           @Observable state: catalogue, cart, orders, notifications, WebSocket
-  APIClient.swift          async/await REST client, snake_case + date coding
-  Models.swift             Codable mirrors of app/models.py
-  Views/                   Root, RestaurantList, Menu, Cart, Orders, OrderDetail, Notifications, Account
+Shared/                  compiled into both apps
+  BarMade.swift          models + async client for the BarMade API
+  APIClient.swift        APIError, ISO date parsing, Info.plist lookup
+  Components.swift       BarMade palette (gold/night/cream), chips, badges, buttons, status vocabulary
+MiniEats/                customer app
+  CustomerStore.swift    @Observable: name, menu + stock, servings math, cart, my orders
+  Views/                 Welcome, Menu (home + dishes), DishSheet, Cart, Orders, OrderTracker, Account
+MiniEatsMerchant/        kitchen app
+  MerchantStore.swift    @Observable: BarMade snapshot, status moves
+  Views/BarMadeViews.swift   Inventory, Menu, Orders (+ status buttons), Alerts, Settings
+scripts/barmade-stub.mjs local stand-in for the API
 ```
 
-## Toward production
+## Not in the iPhone app (yet)
 
-- Real push: register for APNs, send the device token to the backend, and add an APNs channel
-  behind `BaseChannel` (replaces the local-notification mirror).
-- Auth (Sign in with Apple), saved addresses + Google Places autocomplete, Apple Pay / Stripe.
-- MapKit live courier map once the backend streams courier locations.
+- Spanish copy and the "Picked for you" Claude suggestions (web only; the suggestions route
+  `POST {web}/api/recommend` is there to call).
+- Modifiers (extra cheese, …): the BarMade backend has none, so neither app offers them.
+- Push notifications: the tracker polls while open.

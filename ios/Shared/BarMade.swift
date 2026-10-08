@@ -1,8 +1,14 @@
 import Foundation
 
-// BarMade kitchen API (https://barmade-riw5.onrender.com): batch-tracked
-// inventory, menu recipes, orders and expiry alerts, stored in Firestore.
-// Read-only from the merchant app.
+// BarMade kitchen API (https://barmade-riw5.onrender.com), the backend both
+// apps and the customer web app share: batch-tracked inventory, menu
+// recipes, orders and expiry alerts, stored in Firestore.
+//
+// Customers place orders and follow their status; the kitchen moves orders
+// along. Stock and menu are read-only for both.
+
+/// How the kitchen labels orders from this app (web orders say "barmade-web").
+let barMadeAppSource = "barmade-ios"
 
 struct BarMadeIngredient: Decodable, Identifiable, Hashable {
     let id: String
@@ -45,6 +51,7 @@ struct BarMadeMenuItem: Decodable, Identifiable, Hashable {
     let name: String
     let price: Double
     let ingredients: [BarMadeRecipeLine]
+    var category: String?
 }
 
 struct BarMadeRecipeLine: Decodable, Hashable {
@@ -60,13 +67,18 @@ struct BarMadeOrder: Decodable, Identifiable, Hashable {
     let createdAt: Date
     let items: [BarMadeOrderLine]
     let total: Double
-    let consumed: [BarMadeConsumption]
-    // Customer-app orders only (source "barmade-web").
+    var consumed: [BarMadeConsumption] = []
+    // Fields added by the customer apps (web and iOS); older kitchen orders lack them.
     var source: String?
     var customerName: String?
     var fulfillment: String?  // to_go | for_here
     var tableNumber: String?
+    var orderNumber: Int?
+    var updatedAt: Date?
     var statusHistory: [BarMadeStatusChange]?
+
+    /// RECEIVED -> PREPARING -> READY -> COMPLETED; CANCELLED possible until READY.
+    static let steps = ["RECEIVED", "PREPARING", "READY", "COMPLETED"]
 
     /// Where the kitchen can move this order. The server checks it too.
     var nextStatuses: [String] {
@@ -79,6 +91,14 @@ struct BarMadeOrder: Decodable, Identifiable, Hashable {
     }
 
     var isOpen: Bool { !nextStatuses.isEmpty }
+    var isClosed: Bool { !isOpen }
+    /// "#1001" when the kitchen numbered it, else the id.
+    var displayNumber: String { orderNumber.map { "#\($0)" } ?? id }
+    var stepIndex: Int { Self.steps.firstIndex(of: status) ?? -1 }
+
+    func time(of step: String) -> Date? {
+        statusHistory?.first { $0.status == step }?.at ?? (step == "RECEIVED" ? createdAt : nil)
+    }
 }
 
 struct BarMadeStatusChange: Decodable, Hashable {
@@ -131,6 +151,22 @@ struct BarMadeSnapshot {
     var updatedAt: Date?
 }
 
+/// Body of POST /api/orders. Same fields the customer web app sends, so a
+/// phone order and a web order look the same on the kitchen's ticket.
+struct BarMadeNewOrder: Encodable {
+    struct Line: Encodable {
+        let menuItemId: String
+        let quantity: Int
+    }
+
+    let items: [Line]
+    var channel = "barmade"
+    var source = barMadeAppSource
+    let fulfillment: String  // to_go | for_here
+    let tableNumber: String?
+    let customerName: String
+}
+
 /// Async client for the BarMade Express API. Responses are wrapped as
 /// {"count": n, "data": ...}; errors as {"error": {"code", "message"}}.
 struct BarMadeClient {
@@ -138,6 +174,19 @@ struct BarMadeClient {
 
     func list<T: Decodable>(_ path: String) async throws -> [T] {
         try await get(path, as: Envelope<[T]>.self).data
+    }
+
+    func menu() async throws -> [BarMadeMenuItem] { try await list("/api/menu") }
+    func inventory() async throws -> [BarMadeIngredient] { try await list("/api/inventory") }
+    func orders() async throws -> [BarMadeOrder] { try await list("/api/orders") }
+
+    /// nil when the kitchen doesn't know the id.
+    func order(_ id: String) async throws -> BarMadeOrder? {
+        do {
+            return try await get("/api/orders/\(id)", as: Envelope<BarMadeOrder>.self).data
+        } catch let error as APIError where error.status == 404 {
+            return nil
+        }
     }
 
     func snapshot() async throws -> BarMadeSnapshot {
@@ -150,6 +199,16 @@ struct BarMadeClient {
             orders: orders.sorted { $0.createdAt > $1.createdAt },
             alerts: alerts.sorted { $0.createdAt > $1.createdAt },
             updatedAt: Date())
+    }
+
+    /// The kitchen deducts stock from its batches (oldest first) and answers
+    /// 409 when it can't make something.
+    func placeOrder(_ body: BarMadeNewOrder) async throws -> BarMadeOrder {
+        var request = URLRequest(url: baseURL.appending(path: "/api/orders"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        return try JSONDecoder.barMade.decode(Envelope<BarMadeOrder>.self, from: await send(request)).data
     }
 
     /// RECEIVED -> PREPARING -> READY -> COMPLETED, or CANCELLED before READY.
@@ -180,15 +239,15 @@ struct BarMadeClient {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             let message = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error.message
-            throw APIError(message: message ?? "BarMade returned \(status)")
+            throw APIError(message: message ?? "BarMade returned \(status)", status: status)
         }
         return data
     }
 }
 
 extension JSONDecoder {
-    /// BarMade keys are already camelCase. Its timestamps have no zone
-    /// ("2026-10-06T19:40:00"): `createdAt` is the server clock in UTC,
+    /// BarMade keys are already camelCase. Timestamps may lack a zone
+    /// ("2026-10-06T19:40:00"): order times are the server clock in UTC,
     /// while batch arrival/expiry dates are the kitchen's local calendar.
     static let barMade: JSONDecoder = {
         func formatter(_ zone: TimeZone) -> DateFormatter {
@@ -200,11 +259,12 @@ extension JSONDecoder {
         }
         let local = formatter(.current)
         let utc = formatter(TimeZone(identifier: "UTC")!)
+        let utcKeys: Set<String> = ["createdAt", "updatedAt", "at", "placed_at"]
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let string = try decoder.singleValueContainer().decode(String.self)
             let trimmed = string.replacingOccurrences(of: #"\.\d+$"#, with: "", options: .regularExpression)
-            let zoned = decoder.codingPath.last?.stringValue == "createdAt" ? utc : local
+            let zoned = utcKeys.contains(decoder.codingPath.last?.stringValue ?? "") ? utc : local
             guard let date = APIDate.parse(string) ?? zoned.date(from: trimmed) else {
                 throw DecodingError.dataCorrupted(.init(
                     codingPath: decoder.codingPath, debugDescription: "Bad date \(string)"))

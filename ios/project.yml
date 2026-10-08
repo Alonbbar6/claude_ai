@@ -7,29 +7,30 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ""
-    # Server the apps use until the user sets one in Account / Settings.
-    # Point this at a tunnel (Cloudflare/ngrok) to test on a phone without typing.
-    MINIEATS_SERVER_URL: https://stubble-grumble-same.ngrok-free.dev
+    # The kitchen backend both apps use (the team's BarMade API on Render).
+    # Users can change it in Account / Settings.
+    BARMADE_API_URL: https://barmade-riw5.onrender.com
+    # The customer web app (Railway). Optional: gives the iPhone app the same
+    # dish photos, descriptions and categories as the web menu.
+    BARMADE_WEB_URL: ""
 targets:
   MiniEats:
     type: application
     platform: iOS
-    sources: [MiniEats]
+    sources: [MiniEats, Shared]
     info:
       path: MiniEats/Info.plist
       properties:
-        CFBundleDisplayName: Mini Eats
+        CFBundleDisplayName: BarMade
         CFBundleIconName: AppIcon
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        # The dev backend is plain http on localhost / your LAN.
+        # Lets a locally run web app (http://localhost:3000) serve photos.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-        NSLocalNetworkUsageDescription: Connects to your Mini Eats development server.
-        MiniEatsServerURL: $(MINIEATS_SERVER_URL)
-        NSLocationWhenInUseUsageDescription: Your location is shown on the order map and, for pickup orders, tells us when you should leave so you arrive as your food is ready.
-        NSLocationAlwaysAndWhenInUseUsageDescription: With "Always", we can keep updating when to leave for a pickup order while the app is in the background, so the "Time to head out" alert is on time.
-        UIBackgroundModes: [location]
+        NSLocalNetworkUsageDescription: Connects to a BarMade server on your network.
+        BarMadeServerURL: $(BARMADE_API_URL)
+        BarMadeWebURL: $(BARMADE_WEB_URL)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.minieats.app
@@ -56,37 +57,6 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: MiniEats
-  MiniEatsMerchant:
-    type: application
-    platform: iOS
-    # Shares the customer app's models, networking and UI building blocks.
-    sources:
-      - MiniEatsMerchant
-      - MiniEats/Models.swift
-      - MiniEats/APIClient.swift
-      - MiniEats/Views/Components.swift
-    info:
-      path: MiniEatsMerchant/Info.plist
-      properties:
-        CFBundleDisplayName: Eats Merchant
-        CFBundleIconName: AppIcon
-        UILaunchScreen: {}
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
-        NSLocalNetworkUsageDescription: Connects to your Mini Eats development server.
-        MiniEatsServerURL: $(MINIEATS_SERVER_URL)
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.minieats.merchant
-        TARGETED_DEVICE_FAMILY: "1,2"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        CODE_SIGN_STYLE: Automatic
   MiniEatsMerchantUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -97,6 +67,33 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: MiniEatsMerchant
+  MiniEatsMerchant:
+    type: application
+    platform: iOS
+    # Shares the BarMade client, models and UI building blocks with the customer app.
+    sources: [MiniEatsMerchant, Shared]
+    info:
+      path: MiniEatsMerchant/Info.plist
+      properties:
+        CFBundleDisplayName: BarMade Merchant
+        CFBundleIconName: AppIcon
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: Connects to a BarMade server on your network.
+        BarMadeServerURL: $(BARMADE_API_URL)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.minieats.merchant
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
 schemes:
   MiniEatsMerchant:
     build:
