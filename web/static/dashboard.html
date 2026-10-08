@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nonna Rosa · Inventory</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1b1b1b; --muted:#6b6b6b; --line:#e4e2dd; --accent:#0f9d58; --warn:#d9480f; --bad:#c62828; --soft:#f3f2ee; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:12px 20px; background:#1d2b24; color:#fff; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; }
+  header small { color:#b9c7bf; font-weight:400; display:block; font-size:12px; }
+  .tag { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:#2f4a3c; color:#d8efe2; margin-left:6px; vertical-align:middle; }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:14px; max-width:1240px; margin:0 auto; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  section.wide { grid-column:1 / -1; }
+  h2 { margin:0 0 10px; font-size:15px; display:flex; justify-content:space-between; align-items:center; }
+  h2 .muted { font-weight:400; }
+  .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  @media (max-width:600px){ .stats { grid-template-columns:repeat(2,1fr);} }
+  .stat { background:var(--soft); border-radius:10px; padding:10px; }
+  .stat b { display:block; font-size:22px; }
+  .stat span { color:var(--muted); font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; color:var(--muted); font-weight:500; font-size:12px; padding:4px 6px; border-bottom:1px solid var(--line); }
+  td { padding:6px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tr.click { cursor:pointer; } tr.click:hover td { background:#fafaf8; }
+  .bar { height:6px; border-radius:3px; background:#e8e6e1; overflow:hidden; min-width:70px; }
+  .bar i { display:block; height:100%; background:var(--accent); }
+  .bar.low i { background:var(--warn); } .bar.out i { background:var(--bad); } .bar.over i { background:#6a5acd; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; background:#e3f5ea; color:#146c3a; }
+  .badge.low { background:#fdebd3; color:#9a4b00; } .badge.out { background:#fde0e0; color:#9b1c1c; } .badge.over { background:#e9e5fb; color:#4a3bb0; } .badge.gray { background:#eee; color:#555; }
+  .chan { display:inline-block; font-size:11px; padding:0 7px; border-radius:4px; background:#eceae5; margin-right:4px; }
+  button { font:inherit; padding:8px 13px; border:0; border-radius:8px; background:#1d2b24; color:#fff; cursor:pointer; }
+  button.sec { background:#eceae5; color:#1b1b1b; } button.warn { background:var(--warn); } button.sm { padding:4px 9px; font-size:12px; }
+  button:disabled { opacity:.45; cursor:default; }
+  .muted { color:var(--muted); font-size:13px; }
+  .alert { border-left:4px solid var(--warn); background:#fff8f1; padding:8px 10px; border-radius:6px; margin-bottom:8px; font-size:14px; }
+  .alert.out { border-color:var(--bad); background:#fff3f3; }
+  .alert .meta { color:var(--muted); font-size:12px; margin-top:3px; }
+  .order { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:14px; cursor:pointer; }
+  .order:hover { background:#fafaf8; }
+  .trace { background:var(--soft); border-radius:8px; padding:10px; margin:6px 0 10px; font-size:13px; }
+  .trace pre { margin:4px 0; font-size:12px; background:#fff; padding:6px; border-radius:6px; overflow:auto; max-height:140px; }
+  .arrow { color:var(--muted); margin:0 4px; }
+  input[type=number], input[type=text], textarea { font:inherit; padding:6px 8px; border:1px solid #cfcbc3; border-radius:6px; width:100%; }
+  input[type=number] { width:110px; text-align:right; }
+  .diff-up { color:#146c3a; } .diff-down { color:var(--bad); }
+  .special { background:#f3f0ff; border:1px solid #d9d2fb; border-radius:10px; padding:12px; }
+  .special b { font-size:16px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; padding:16px; z-index:10; }
+  .modal { background:#fff; border-radius:12px; max-width:720px; width:100%; max-height:90vh; overflow:auto; padding:18px 20px; }
+  .summary { white-space:pre-wrap; background:var(--soft); border-radius:8px; padding:12px; font-size:14px; }
+  .summary h3 { margin:10px 0 4px; font-size:14px; }
+  .toast { position:fixed; right:16px; bottom:16px; background:#1d2b24; color:#fff; padding:12px 16px; border-radius:10px; max-width:360px; box-shadow:0 8px 24px rgba(0,0,0,.25); animation:in .2s; z-index:20; }
+  @keyframes in { from { transform:translateY(10px); opacity:0 } }
+  #qr { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  #qrcode img, #qrcode canvas { border:6px solid #fff; border-radius:8px; }
+  .hist { display:grid; grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); gap:6px; }
+  .hist div { background:var(--soft); border-radius:8px; padding:6px; text-align:center; font-size:12px; }
+  .hist b { display:block; font-size:15px; }
+  details summary { cursor:pointer; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1 id="rname">Restaurant <span class="tag">Barmade inventory demo · provisional name</span></h1>
+    <small>Owner / manager view · simulated channels · synthetic data · stock levels are estimates</small></div>
+  <div class="row">
+    <button class="sec" id="rush">Simulate rush</button>
+    <button id="close">Close day</button>
+    <button class="sec sm" id="reset" title="Reseed the two-month history">Reset demo</button>
+  </div>
+</header>
+
+<main>
+  <section class="wide">
+    <div class="stats">
+      <div class="stat"><b id="s-orders">–</b><span>Orders today</span></div>
+      <div class="stat"><b id="s-rev">–</b><span>Revenue today</span></div>
+      <div class="stat"><b id="s-alerts">–</b><span>Active alerts</span></div>
+      <div class="stat"><b id="s-low">–</b><span>Ingredients low / out</span></div>
+      <div class="stat"><b id="s-hist">–</b><span>Days of history seeded</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Alerts <span class="muted">low-stock conditions from recipe estimates</span></h2>
+    <div id="alerts" class="muted">No active alerts.</div>
+  </section>
+
+  <section>
+    <h2>Overstock special <span class="muted">computed suggestion</span></h2>
+    <div id="specials" class="muted">No ingredient is above 1.5× par.</div>
+  </section>
+
+  <section>
+    <h2>Menu &amp; servings remaining <span class="muted">estimate · click a row for the basis</span></h2>
+    <table><thead><tr><th>Dish</th><th>Price</th><th>Servings left</th><th>Limited by</th><th></th></tr></thead><tbody id="menu"></tbody></table>
+    <div id="menu-basis"></div>
+  </section>
+
+  <section>
+    <h2>Estimated inventory <span class="muted">click a row for movement history</span></h2>
+    <table><thead><tr><th>Ingredient</th><th>Est. on hand</th><th>vs par</th><th>Status</th><th>Cover</th></tr></thead><tbody id="inv"></tbody></table>
+    <div id="inv-detail"></div>
+  </section>
+
+  <section>
+    <h2>Live orders <span class="muted">click one to trace it to the shelf</span></h2>
+    <div id="orders" class="muted">No orders yet.</div>
+  </section>
+
+  <section>
+    <h2>Inventory count <span class="muted" id="count-sched"></span></h2>
+    <p class="muted" style="margin:0 0 8px">Fields are prefilled with today's <b>estimate</b>. Enter what you actually counted, review the differences, then confirm. Nothing is saved until you confirm.</p>
+    <table><thead><tr><th>Ingredient</th><th>Estimate</th><th>Counted</th></tr></thead><tbody id="count"></tbody></table>
+    <div class="row" style="margin-top:8px">
+      <input type="text" id="count-note" placeholder="Note (e.g. Sunday count, spoilage found)" style="flex:1;min-width:180px">
+      <button class="sec" id="count-reload">Reload estimates</button>
+      <button id="count-review">Review differences</button>
+    </div>
+    <div id="count-review-out"></div>
+  </section>
+
+  <section>
+    <h2>Classroom ordering <span class="muted">participants scan to order</span></h2>
+    <div id="qr"><div id="qrcode"></div><div><div class="muted">Customer menu URL</div><div id="order-url" style="font-weight:600;word-break:break-all"></div>
+      <p class="muted" style="margin:8px 0 0">If participation or Wi-Fi is thin, use <b>Simulate rush</b> in the header — it places orders across all channels.</p></div></div>
+  </section>
+
+  <section>
+    <h2>History <span class="muted" id="hist-note"></span></h2>
+    <div class="hist" id="hist"></div>
+  </section>
+</main>
+
+<div id="modal"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const api = (p, o={}) => fetch(p, {headers:{"content-type":"application/json"}, ...o}).then(async r => { const j = await r.json(); if (!r.ok) throw j.error || j; return j; });
+const money = v => "$" + Number(v).toFixed(2);
+const qty = v => Number(v).toLocaleString(undefined, {maximumFractionDigits:1});
+const t = iso => new Date(iso).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let state = null, openInv = null, openMenu = null, openOrder = null, seenAlerts = new Set(), first = true;
+
+async function refresh() {
+  state = await api("/api/state");
+  $("#rname").firstChild.textContent = state.restaurant.name + " ";
+  $("#s-orders").textContent = state.today.orders;
+  $("#s-rev").textContent = money(state.today.revenue);
+  $("#s-alerts").textContent = state.alerts.length;
+  $("#s-low").textContent = state.inventory.filter(i => i.status !== "ok").length;
+  $("#s-hist").textContent = state.history_days;
+  renderAlerts(); renderSpecials(); renderMenu(); renderInv(); renderOrders(); renderHist();
+  if (first) { first = false; state.alerts.forEach(a => seenAlerts.add(a.id)); }
+}
+
+function renderAlerts() {
+  const el = $("#alerts");
+  if (!state.alerts.length) { el.className = "muted"; el.textContent = "No active alerts."; return; }
+  el.className = "";
+  el.innerHTML = state.alerts.map(a => `<div class="alert ${a.kind}"><b>${a.kind === "out" ? "Out" : "Low stock"}: ${esc(a.ingredient)}</b><div>${esc(a.message)}</div>
+    <div class="meta">${t(a.created_at)}${a.order_id ? " · triggered by " + a.order_id : ""}</div></div>`).join("");
+  state.alerts.forEach(a => { if (!seenAlerts.has(a.id)) { seenAlerts.add(a.id); toast(`${a.kind === "out" ? "Out of stock" : "Low stock"}: ${a.ingredient}`, a.message.split(".")[0] + "."); } });
+}
+
+function renderSpecials() {
+  const el = $("#specials");
+  if (!state.specials.length) { el.className = "muted"; el.textContent = "No ingredient is above 1.5× par."; return; }
+  el.className = "";
+  el.innerHTML = state.specials.map(s => `<div class="special"><b>Tonight's special: ${esc(s.dish)} — ${money(s.special_price)}</b> <span class="badge over">${s.discount_pct}% off</span>
+    <div class="muted" style="margin-top:4px">Regular ${money(s.regular_price)} · uses ${qty(s.per_serving)} ${s.unit} ${esc(s.ingredient)} per serving</div>
+    <div style="margin-top:6px"><b>Why:</b> ${esc(s.reason)}</div></div>`).join("");
+}
+
+function renderMenu() {
+  $("#menu").innerHTML = state.menu.map(m => {
+    const s = m.servings, warn = s.servings === 0 ? "out" : s.servings <= 5 ? "low" : "";
+    return `<tr class="click" onclick="toggleMenu('${m.id}')"><td><b>${esc(m.name)}</b>${m.paused ? ' <span class="badge gray">Paused</span>' : ""}</td><td>${money(m.price)}</td>
+      <td><span class="badge ${warn}">${s.servings}</span></td><td class="muted">${esc(s.constraint.ingredient)}</td>
+      <td><button class="sec sm" onclick="event.stopPropagation(); pause('${m.id}', ${!m.paused})">${m.paused ? "Resume" : "Pause"}</button></td></tr>`;
+  }).join("");
+  const el = $("#menu-basis"); const m = state.menu.find(x => x.id === openMenu);
+  el.innerHTML = m ? `<div class="trace"><b>${esc(m.name)}</b> · estimated servings = the smallest of:
+    <table style="margin-top:4px">${m.servings.basis.map(b => `<tr><td>${esc(b.ingredient)}</td><td class="muted">${esc(b.calc)}</td><td>${b.ingredient_id === m.servings.constraint.ingredient_id ? '<span class="badge low">limiting</span>' : ""}</td></tr>`).join("")}</table>
+    <div class="muted" style="margin-top:4px">${esc(m.servings.estimate_note)} Pausing a dish only affects this demo; no external channel is changed.</div></div>` : "";
+}
+
+function renderInv() {
+  $("#inv").innerHTML = state.inventory.map(i => {
+    const cls = i.status !== "ok" ? i.status : i.overstock ? "over" : "";
+    return `<tr class="click" onclick="toggleInv('${i.id}')"><td><b>${esc(i.name)}</b><div class="muted" style="font-size:11px">${esc(i.category)}</div></td>
+      <td>${qty(i.estimated_on_hand)} ${i.unit}</td><td><div class="bar ${cls}"><i style="width:${Math.round(i.fill*100)}%"></i></div><div class="muted" style="font-size:11px">par ${qty(i.par)} · alert ≤ ${qty(i.low_threshold)}</div></td>
+      <td><span class="badge ${cls}">${i.status === "ok" ? (i.overstock ? "Overstock" : "OK") : i.status.toUpperCase()}</span></td><td class="muted">${i.days_of_cover ?? "–"} d</td></tr>`;
+  }).join("");
+  if (openInv) loadInvDetail(openInv); else $("#inv-detail").innerHTML = "";
+}
+
+async function loadInvDetail(id) {
+  const d = await api(`/api/inventory/${id}`);
+  const label = { sale: "Sale", delivery: "Delivery", waste: "Waste", count: "Count adjustment" };
+  $("#inv-detail").innerHTML = `<div class="trace"><b>${esc(d.name)}</b> · estimated ${qty(d.estimated_on_hand)} ${d.unit} · used in ${d.used_in.map(esc).join(", ")}
+    · last counted ${d.last_counted_at ? new Date(d.last_counted_at).toLocaleDateString() : "never"}
+    <div style="margin:6px 0">${d.dishes.map(x => `<span class="chan">${esc(x.dish)}: ${x.servings} left</span>`).join("")}</div>
+    <table>${d.events.slice(0, 12).map(e => `<tr><td class="muted">${new Date(e.at).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"})}</td>
+      <td>${label[e.type] || e.type}${e.order_id ? ` <span class="chan">${e.order_id}</span>` : ""}<div class="muted" style="font-size:11px">${esc(e.note)}</div></td>
+      <td class="${e.delta >= 0 ? "diff-up" : "diff-down"}">${e.delta >= 0 ? "+" : ""}${qty(e.delta)}</td><td class="muted">→ ${qty(e.after)} ${d.unit}</td></tr>`).join("")}</table></div>`;
+}
+
+function renderOrders() {
+  const el = $("#orders");
+  if (!state.recent_orders.length) { el.className = "muted"; el.textContent = "No orders yet."; return; }
+  el.className = "";
+  el.innerHTML = state.recent_orders.slice(0, 12).map(o => `<div class="order" onclick="toggleOrder('${o.id}')"><div class="row" style="justify-content:space-between">
+    <span><span class="chan">${esc(o.channel_label)}</span><b>${o.id}</b> ${o.customer ? "· " + esc(o.customer) : ""}</span><span>${money(o.total)} · ${t(o.created_at)}</span></div>
+    <div class="muted">${o.lines.map(l => `${l.quantity}× ${esc(l.name)}`).join(", ")}</div><div id="trace-${o.id}"></div></div>`).join("");
+  if (openOrder) loadTrace(openOrder);
+}
+
+async function loadTrace(id) {
+  const el = document.getElementById("trace-" + id); if (!el) return;
+  const o = await api(`/api/orders/${id}`);
+  el.innerHTML = `<div class="trace" onclick="event.stopPropagation()">
+    <b>1. Channel payload</b> <span class="muted">(simulated ${esc(o.channel_label)} format)</span><pre>${esc(JSON.stringify(o.raw_payload, null, 1))}</pre>
+    <b>2. Canonical order</b> → ${o.lines.map(l => `<span class="chan">${l.menu_item_id} × ${l.quantity}</span>`).join("")}
+    <div style="margin-top:6px"><b>3. Recipes</b> ${o.recipes.map(r => `<div class="muted">${r.quantity}× ${esc(r.dish)}: ${r.recipe.map(x => `${qty(x.quantity * r.quantity)} ${x.unit} ${esc(x.ingredient)}`).join(", ")}</div>`).join("")}</div>
+    <div style="margin-top:6px"><b>4. Ingredient movements</b> <span class="muted">(estimate)</span>
+      <table>${o.movements.map(m => `<tr><td>${esc(m.ingredient)}</td><td class="diff-down">${qty(m.delta)} ${m.unit}</td><td class="muted">${qty(m.before)} → <b>${qty(m.after)}</b> ${m.unit}</td></tr>`).join("")}</table></div></div>`;
+}
+
+function renderHist() {
+  $("#hist-note").textContent = `${state.history_days} closed days · synthetic`;
+  $("#hist").innerHTML = state.history.slice(-14).map(h => `<div><span class="muted">${h.date.slice(5)}</span><b>${h.orders}</b>${money(h.revenue)}</div>`).join("");
+}
+
+function toggleMenu(id) { openMenu = openMenu === id ? null : id; renderMenu(); }
+function toggleInv(id) { openInv = openInv === id ? null : id; renderInv(); }
+function toggleOrder(id) { openOrder = openOrder === id ? null : id; renderOrders(); }
+async function pause(id, on) { await api(`/api/menu/${id}/pause`, {method:"POST", body:JSON.stringify({paused:on})}); refresh(); }
+
+// ---- inventory count: prefill, review, confirm --------------------------------
+let countRows = [];
+async function loadCountSheet() {
+  const sheet = await api("/api/inventory/count-sheet");
+  countRows = sheet.rows;
+  $("#count-sched").textContent = (sheet.scheduled ? "Today is the regular count day" : "Unscheduled count") + " · " + sheet.schedule;
+  $("#count").innerHTML = sheet.rows.map(r => `<tr><td>${esc(r.name)}</td><td class="muted">${qty(r.expected)} ${r.unit}</td>
+    <td><input type="number" min="0" step="any" data-id="${r.id}" value="${r.expected}"> <span class="muted">${r.unit}</span></td></tr>`).join("");
+  $("#count-review-out").innerHTML = "";
+}
+function counts() { const c = {}; document.querySelectorAll("#count input").forEach(i => c[i.dataset.id] = +i.value); return c; }
+async function reviewCount() {
+  const r = await api("/api/inventory/count/review", {method:"POST", body:JSON.stringify({counts: counts()})});
+  const out = $("#count-review-out");
+  if (!r.changes.length) { out.innerHTML = `<p class="muted">No differences from the estimate — nothing to save.</p>`; return; }
+  out.innerHTML = `<div class="trace"><b>Review before saving</b> · ${r.changes.length} ingredient(s) differ from the estimate
+    <table>${r.changes.map(c => `<tr><td>${esc(c.name)}${c.flag ? ' <span class="badge low">≥10% off</span>' : ""}</td><td class="muted">est. ${qty(c.expected)}</td><td>counted ${qty(c.counted)} ${c.unit}</td>
+      <td class="${c.delta > 0 ? "diff-up" : "diff-down"}">${c.delta > 0 ? "+" : ""}${qty(c.delta)} (${c.pct > 0 ? "+" : ""}${c.pct}%)</td></tr>`).join("")}</table>
+    <div class="row" style="margin-top:8px"><button class="warn" id="count-confirm">Confirm and save adjustments</button><button class="sec" onclick="$('#count-review-out').innerHTML=''">Go back</button>
+    <span class="muted">${esc(r.note)}</span></div></div>`;
+  $("#count-confirm").onclick = async () => {
+    const res = await api("/api/inventory/count/confirm", {method:"POST", body:JSON.stringify({counts: counts(), note: $("#count-note").value, confirmed: true})});
+    toast("Count saved", `${res.saved.length} adjustment(s) recorded as count events.`);
+    await loadCountSheet(); refresh();
+  };
+}
+
+// ---- actions -------------------------------------------------------------------
+async function rush() {
+  const r = await api("/api/simulate-rush", {method:"POST", body:JSON.stringify({orders: 12})});
+  toast("Rush simulated", `${r.placed.length} orders placed across channels${r.rejected.length ? `, ${r.rejected.length} rejected for estimated stock` : ""}.`);
+  refresh();
+}
+async function closeDay() {
+  $("#modal").innerHTML = `<div class="modal-bg"><div class="modal"><h2>Closing the day…</h2><p class="muted">Computing facts, then asking the model to phrase them.</p></div></div>`;
+  const r = await api("/api/close-day", {method:"POST"});
+  const s = r.summary, f = r.facts;
+  const src = s.source === "claude" ? `<span class="badge">Written by ${esc(s.model)} · grounded</span>` : `<span class="badge gray">Template summary</span> <span class="muted">${esc(s.reason || "")}</span>`;
+  $("#modal").innerHTML = `<div class="modal-bg" onclick="if(event.target===this)this.remove()"><div class="modal">
+    <h2>End of day — ${f.date} ${src}</h2>
+    <div class="summary">${s.text.replace(/^### (.*)$/gm, "<h3>$1</h3>").replace(/^- /gm, "• ")}</div>
+    <details style="margin-top:10px"><summary>Computed facts the summary was given (${f.sales.orders} orders, ${money(f.sales.revenue)})</summary><pre class="trace" style="overflow:auto;font-size:11px">${esc(JSON.stringify(f, null, 1))}</pre></details>
+    <p class="muted">The model only phrases; every number comes from the facts above. A summary mentioning a number not in the facts is discarded for the template.</p>
+    <button onclick="document.querySelector('.modal-bg').remove()">Close</button></div></div>`;
+  refresh();
+}
+async function resetDemo() { await api("/api/reset", {method:"POST"}); openInv = openMenu = openOrder = null; seenAlerts = new Set(); first = true; await loadCountSheet(); refresh(); toast("Demo reset", "Two months of synthetic history reseeded."); }
+
+function toast(title, body) { const el = document.createElement("div"); el.className = "toast"; el.innerHTML = `<b>${esc(title)}</b><br>${esc(body)}`; document.body.appendChild(el); setTimeout(() => el.remove(), 6000); }
+
+$("#rush").onclick = rush; $("#close").onclick = closeDay; $("#reset").onclick = resetDemo;
+$("#count-review").onclick = reviewCount; $("#count-reload").onclick = loadCountSheet;
+const orderUrl = location.origin + "/order";
+$("#order-url").textContent = orderUrl;
+if (window.QRCode) new QRCode($("#qrcode"), {text: orderUrl, width: 132, height: 132}); else $("#qrcode").innerHTML = `<div class="muted">QR library offline — share the URL.</div>`;
+
+refresh(); loadCountSheet();
+setInterval(() => { if (!document.querySelector("#count input:focus")) refresh(); }, 3000);
+</script>
+</body>
+</html>

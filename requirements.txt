@@ -5,3 +5,4 @@ numpy>=1.26
 pydantic>=2.7
 pytest>=8.0
 httpx>=0.27
+anthropic>=1.0          # web/ demo: close-day summary (optional at runtime)
